@@ -3,6 +3,7 @@ import json
 from os import environ
 
 from flask import Flask
+from flask_compress import Compress
 from flask_cors import CORS
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -24,6 +25,7 @@ pool = ConnectionPool(
 atexit.register(pool.close)
 
 app = Flask(__name__)
+Compress(app)
 CORS(app)
 
 dashboard_query = r"""
