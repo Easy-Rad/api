@@ -1,7 +1,9 @@
 import atexit
+import json
 from os import environ
 
 from flask import Flask
+from flask_cors import CORS
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -22,8 +24,9 @@ pool = ConnectionPool(
 atexit.register(pool.close)
 
 app = Flask(__name__)
+CORS(app)
 
-dashboard_query = """
+dashboard_query = r"""
 select
     rf_site site,
     rf_pat_type pat_type,
@@ -49,31 +52,85 @@ select
     pa_firstname::text,
     rf_pat_location::text as location,
     rf_reason as description,
-    extract(epoch from rf_dor at time zone 'Pacific/Auckland') as received,
-    coalesce((select array_agg(trim(p)) from
-        unnest(xpath('//p/text()', xmlparse(document mit.te_text))::text[]) as p
+    extract(epoch from rf_dor at time zone 'Pacific/Auckland')::int as received,
+    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document mit_text.te_text))::text[]) as p
         where trim(p) != ''), array[]::text[]) as mit_notes,
-    coalesce((select array_agg(trim(p)) from
-        unnest(xpath('//p/text()', xmlparse(document doc.te_text))::text[]) as p
-        where trim(p) != ''), array[]::text[]) as doc_notes
+    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document dr_text.te_text))::text[]) as p
+        where trim(p) != ''), array []::text[])  dr_notes
 from case_referral
 join patient on rf_pno=pa_pno
 left join notes mit_notes on rf_serial=mit_notes.no_key and mit_notes.no_type='F' and mit_notes.no_category='Q' and mit_notes.no_sub_category='M' and mit_notes.no_sub_category='M' and mit_notes.no_status='A'
-left join notes doc_notes on rf_serial=doc_notes.no_key and doc_notes.no_type='F' and doc_notes.no_category='Q' and doc_notes.no_sub_category='G' and doc_notes.no_status='A'
-left join doctext mit on mit_notes.no_serial=mit.te_key and xml_is_well_formed_document(mit.te_text)
-left join doctext doc on doc_notes.no_serial=doc.te_key and xml_is_well_formed_document(doc.te_text)
+left join notes dr_notes on rf_serial = dr_notes.no_key and dr_notes.no_type = 'F' and dr_notes.no_category = 'Q' and dr_notes.no_sub_category = 'G' and dr_notes.no_status = 'A'
+left join doctext mit_text on mit_notes.no_serial = mit_text.te_key and xml_is_well_formed_document(mit_text.te_text)
+left join doctext dr_text on dr_notes.no_serial = dr_text.te_key and xml_is_well_formed_document(dr_text.te_text)
 where (rf_new_rf_serial=0 or rf_new_rf_serial is null)
-    and rf_status='W'
-    and rf_site in ('CDHB','EMER')
-    and rf_pat_type in ('INP','ED')
-    and rf_exam_type=%s
+and rf_status='W'
+and rf_site in ('CDHB','EMER')
+and rf_pat_type in ('INP','ED')
+and rf_exam_type=%s
 order by rf_dor desc
 limit 100
 """
 
 @app.route('/dashboard/<modality>', methods=['GET'])
-def get_dashboard(modality: str): #e.g. CT, MR
+# ["CT", "DI", "DS", "DX", "MC", "MM", "MR", "NM", "NO", "OD", "OT", "PT", "SC", "US", "XR"]
+def get_dashboard(modality: str):
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(dashboard_query, [modality], prepare=True)
             return cur.fetchall()
+
+
+comrad_sessions = r"""
+with log as (
+select max(sg_serial) as sg_serial
+from syslog
+where sg_error_number = 121
+and sg_datetime > now() at time zone 'Pacific/Auckland' - '3 days'::interval
+group by sg_user, sg_terminal_tcpip
+order by sg_serial desc
+)
+select
+    extract(epoch from sg_datetime at time zone 'Pacific/Auckland')::int as last_login,
+    sg_user::text as user_id,
+    st_firstnames::text as firstname,
+    st_surname::text as surname,
+    -- ad_mobile_no as cell_ph,
+    -- ad_work_no as work_ph,
+    case
+        when st_qualification like 'RA%' then 'Radiologist'
+        when st_qualification = 'FW' then 'Fellow'
+        else 'Registrar'
+    end as role,
+    ad_add3::text as specialty,
+    tl_name::text  terminal,
+    (regexp_match(sg_err_supplement, 'Login from ((?:[0-9]{1,3}\.){3}[0-9]{1,3})'))[1] as ip
+from log
+join syslog using (sg_serial)
+join staff on sg_user = st_user_code
+join address on st_ad_serial = ad_serial
+join terminal on sg_terminal_tcpip = terminal.tl_tcpip
+where sg_err_supplement LIKE 'Login from %'
+and st_status = 'A'
+and st_job_class in ('MC', 'JR')
+and (st_qualification in ('JR', 'SR', 'FW') or st_qualification like 'RA%')
+"""
+
+# fetch("https://cdhbdepartments.cdhb.health.nz/site/Radiology/_api/Web/Lists(guid'5c51d5f9-e243-4766-b665-5a1877400e77')/items?$select=Title,DeskName,DeskId,DeskPhone&$orderby=DeskName,DeskId", {headers: {Accept: "application/json; odata=nometadata"}})
+with open('data/desks.json', 'r') as f:
+    desks = {desk['Title']: dict(
+        id=desk['DeskId'],
+        group=desk['DeskName'],
+        phone=desk['DeskPhone'],
+    ) for desk in json.load(f)}
+
+@app.route('/locator', methods=['GET'])
+def get_locator():
+    result = []
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(comrad_sessions, prepare=True)
+            for row in cur:
+                row['desk'] = desks.get(row['ip'])
+                result.append(row)
+            return result

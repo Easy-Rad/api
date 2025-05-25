@@ -1,0 +1,338 @@
+[
+  {
+    "Title": "172.30.26.107",
+    "DeskId": "Waipapa Abdo 10",
+    "DeskName": "Abdo",
+    "DeskPhone": "86289"
+  },
+  {
+    "Title": "172.30.26.98",
+    "DeskId": "Waipapa Abdo 5",
+    "DeskName": "Abdo",
+    "DeskPhone": "81426"
+  },
+  {
+    "Title": "172.30.26.104",
+    "DeskId": "Waipapa Abdo 6",
+    "DeskName": "Abdo",
+    "DeskPhone": "80988"
+  },
+  {
+    "Title": "10.13.24.48",
+    "DeskId": "Waipapa Abdo 7",
+    "DeskName": "Abdo",
+    "DeskPhone": "86287"
+  },
+  {
+    "Title": "172.30.26.68",
+    "DeskId": "Waipapa Abdo 9",
+    "DeskName": "Abdo",
+    "DeskPhone": "80022"
+  },
+  {
+    "Title": "10.11.8.22",
+    "DeskId": "BWD 1",
+    "DeskName": "Burwood",
+    "DeskPhone": "99394"
+  },
+  {
+    "Title": "10.11.8.13",
+    "DeskId": "BWD 2",
+    "DeskName": "Burwood",
+    "DeskPhone": "99395"
+  },
+  {
+    "Title": "10.11.8.43",
+    "DeskId": "BWD 3",
+    "DeskName": "Burwood",
+    "DeskPhone": "99396"
+  },
+  {
+    "Title": "10.11.8.31",
+    "DeskId": "BWD 4",
+    "DeskName": "Burwood",
+    "DeskPhone": "99397"
+  },
+  {
+    "Title": "172.30.26.133",
+    "DeskId": "Waiapapa Chest 3",
+    "DeskName": "Chest",
+    "DeskPhone": "87304"
+  },
+  {
+    "Title": "172.30.26.69",
+    "DeskId": "Waipapa Chest 1",
+    "DeskName": "Chest",
+    "DeskPhone": "87302"
+  },
+  {
+    "Title": "10.13.20.77",
+    "DeskId": "Waipapa Chest 2",
+    "DeskName": "Chest",
+    "DeskPhone": "87303"
+  },
+  {
+    "Title": "172.30.26.130",
+    "DeskId": "Waipapa Chest 4",
+    "DeskName": "Chest",
+    "DeskPhone": "80789"
+  },
+  {
+    "Title": "172.30.26.64",
+    "DeskId": "Waipapa ED 1",
+    "DeskName": "ED",
+    "DeskPhone": "87108"
+  },
+  {
+    "Title": "10.13.16.66",
+    "DeskId": "Waipapa ED 2",
+    "DeskName": "ED",
+    "DeskPhone": "87328"
+  },
+  {
+    "Title": "10.13.16.169",
+    "DeskId": "Waipapa ED 3",
+    "DeskName": "ED",
+    "DeskPhone": "87330"
+  },
+  {
+    "Title": "10.13.16.102",
+    "DeskId": "Waipapa ED 4",
+    "DeskName": "ED",
+    "DeskPhone": "87331"
+  },
+  {
+    "Title": "10.13.40.93",
+    "DeskId": "Waipapa IR 2",
+    "DeskName": "Interventional",
+    "DeskPhone": "81865"
+  },
+  {
+    "Title": "10.13.40.33",
+    "DeskId": "Waipapa IR 3",
+    "DeskName": "Interventional",
+    "DeskPhone": "87294"
+  },
+  {
+    "Title": "10.13.40.86",
+    "DeskId": "Waipapa IR 4",
+    "DeskName": "Interventional",
+    "DeskPhone": "87398"
+  },
+  {
+    "Title": "172.30.26.96",
+    "DeskId": "Waipapa IR 5",
+    "DeskName": "Interventional",
+    "DeskPhone": "87296"
+  },
+  {
+    "Title": "172.30.26.67",
+    "DeskId": "Waipapa IR 6",
+    "DeskName": "Interventional",
+    "DeskPhone": "87389"
+  },
+  {
+    "Title": "172.30.26.58",
+    "DeskId": "Waipapa IR 1",
+    "DeskName": "IR HELPDESK",
+    "DeskPhone": "87293"
+  },
+  {
+    "Title": "172.30.79.26",
+    "DeskId": "NM 1",
+    "DeskName": "Molecular Imaging",
+    "DeskPhone": "80870"
+  },
+  {
+    "Title": "172.30.84.106",
+    "DeskId": "NM 2",
+    "DeskName": "Molecular Imaging",
+    "DeskPhone": "88493"
+  },
+  {
+    "Title": "172.30.26.122",
+    "DeskId": "Waipapa MSK 19",
+    "DeskName": "MSK",
+    "DeskPhone": "80248"
+  },
+  {
+    "Title": "172.30.26.140",
+    "DeskId": "Waipapa MSK 20",
+    "DeskName": "MSK",
+    "DeskPhone": "87320"
+  },
+  {
+    "Title": "172.30.26.86",
+    "DeskId": "Waipapa MSK 21",
+    "DeskName": "MSK",
+    "DeskPhone": "87319"
+  },
+  {
+    "Title": "172.30.26.102",
+    "DeskId": "Waipapa MSK 22",
+    "DeskName": "MSK",
+    "DeskPhone": "87317"
+  },
+  {
+    "Title": "172.30.26.143",
+    "DeskId": "Waiapapa Neuro 15",
+    "DeskName": "Neuro",
+    "DeskPhone": "89642"
+  },
+  {
+    "Title": "172.30.26.139",
+    "DeskId": "Waiapapa Neuro 16",
+    "DeskName": "Neuro",
+    "DeskPhone": "87318"
+  },
+  {
+    "Title": "172.30.26.82",
+    "DeskId": "Waipapa Neuro 17",
+    "DeskName": "Neuro",
+    "DeskPhone": "80262"
+  },
+  {
+    "Title": "172.30.26.125",
+    "DeskId": "Waipapa Neuro 18",
+    "DeskName": "Neuro",
+    "DeskPhone": "81310"
+  },
+  {
+    "Title": "172.30.28.62",
+    "DeskId": "CWH 1 LEFT",
+    "DeskName": "OBGYN ",
+    "DeskPhone": "85763"
+  },
+  {
+    "Title": "172.30.28.80",
+    "DeskId": "CWH 2 RIGHT",
+    "DeskName": "OBGYN",
+    "DeskPhone": "85762"
+  },
+  {
+    "Title": "172.30.243.160",
+    "DeskId": "CWH 3 Library",
+    "DeskName": "OBGYN",
+    "DeskPhone": "85801"
+  },
+  {
+    "Title": "172.30.243.14",
+    "DeskId": "CWH 4 Blue Room",
+    "DeskName": "OBGYN",
+    "DeskPhone": "80053"
+  },
+  {
+    "Title": "172.30.26.137",
+    "DeskId": "Waipapa Paed 12",
+    "DeskName": "Paeds",
+    "DeskPhone": "89024"
+  },
+  {
+    "Title": "172.30.26.134",
+    "DeskId": "Waipapa Paed 13",
+    "DeskName": "Paeds",
+    "DeskPhone": "81782"
+  },
+  {
+    "Title": "172.30.26.108",
+    "DeskId": "Waipapap Paed 11",
+    "DeskName": "Paeds",
+    "DeskPhone": "81651"
+  },
+  {
+    "Title": "172.30.26.132",
+    "DeskId": "Waipapa Paed 14",
+    "DeskName": "Paeds HELPDESK",
+    "DeskPhone": "86288"
+  },
+  {
+    "Title": "172.30.77.37",
+    "DeskId": "Park A1",
+    "DeskName": "Reporting",
+    "DeskPhone": "88041"
+  },
+  {
+    "Title": "172.30.28.65",
+    "DeskId": "Park A2",
+    "DeskName": "Reporting",
+    "DeskPhone": "88045"
+  },
+  {
+    "Title": "172.30.28.73",
+    "DeskId": "Park A3",
+    "DeskName": "Reporting",
+    "DeskPhone": "88085"
+  },
+  {
+    "Title": "172.30.28.34",
+    "DeskId": "Park A4",
+    "DeskName": "Reporting",
+    "DeskPhone": "89215"
+  },
+  {
+    "Title": "172.30.83.76",
+    "DeskId": "Park A5",
+    "DeskName": "Reporting",
+    "DeskPhone": "88049"
+  },
+  {
+    "Title": "172.30.28.82",
+    "DeskId": "Park A6",
+    "DeskName": "Reporting",
+    "DeskPhone": "89218"
+  },
+  {
+    "Title": "172.30.77.50",
+    "DeskId": "Park A7",
+    "DeskName": "Reporting",
+    "DeskPhone": null
+  },
+  {
+    "Title": "172.30.28.40",
+    "DeskId": "Park B1",
+    "DeskName": "Reporting",
+    "DeskPhone": "81746"
+  },
+  {
+    "Title": "172.30.28.93",
+    "DeskId": "Park B2",
+    "DeskName": "Reporting",
+    "DeskPhone": "86334"
+  },
+  {
+    "Title": "172.30.28.91",
+    "DeskId": "Park B3",
+    "DeskName": "Reporting",
+    "DeskPhone": "81781"
+  },
+  {
+    "Title": "172.30.28.45",
+    "DeskId": "Park M5",
+    "DeskName": "Reporting",
+    "DeskPhone": "81717"
+  },
+  {
+    "Title": "172.30.26.83",
+    "DeskId": "Park N1",
+    "DeskName": "Reporting",
+    "DeskPhone": "88251"
+  },
+  {
+    "Title": "172.30.28.47",
+    "DeskId": "Park N2",
+    "DeskName": "Reporting",
+    "DeskPhone": "89806"
+  },
+  {
+    "Title": "172.30.26.59",
+    "DeskId": "NM 3",
+    "DeskName": "Sue O'Malley Office",
+    "DeskPhone": "86677"
+  },
+  {
+    "Title": "10.13.230.12",
+    "DeskId": "Waipapa US Abdo 8",
+    "DeskName": "Ultrasound",
+    "DeskPhone": "80771"
+  }
+]
