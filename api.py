@@ -3,12 +3,11 @@ import json
 from os import environ
 
 from flask import Flask
-from flask_compress import Compress
-from flask_cors import CORS
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
+DB_PORT = environ.get('DB_PORT', '5432')
 DB_NAME = environ.get('DB_NAME', 'prod_cdhb')
 DB_USER = environ['DB_USER']
 DB_PASSWORD = environ['DB_PASSWORD']
@@ -17,6 +16,7 @@ pool = ConnectionPool(
     open=True,
     kwargs=dict(
         host=DB_HOST,
+        port=DB_PORT,
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASSWORD,
@@ -25,8 +25,10 @@ pool = ConnectionPool(
 atexit.register(pool.close)
 
 app = Flask(__name__)
-Compress(app)
-CORS(app)
+
+@app.route('/health', methods=['GET'])
+def health():
+    return dict(status="healthy")
 
 dashboard_query = r"""
 select
