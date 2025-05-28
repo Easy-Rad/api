@@ -34,8 +34,8 @@ WORKDIR /app
 RUN chown appuser:appuser /app
 
 # Copy application files
-COPY --chown=appuser:appuser api.py .
-COPY --chown=appuser:appuser data/desks.json ./data/
+COPY --chown=appuser:appuser *.py .
+COPY --chown=appuser:appuser data/*.json ./data/
 
 # Switch to non-root user
 USER appuser

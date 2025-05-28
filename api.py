@@ -2,9 +2,11 @@ import atexit
 import json
 from os import environ
 
-from flask import Flask
+from flask import Flask, jsonify
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+
+from tokenise import tokenise_request
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
 DB_PORT = environ.get('DB_PORT', '5432')
@@ -241,9 +243,26 @@ from parsed
 join patient on rf_pno = pa_pno
 where rf_serial=%s
 """
-@app.get('/request/<request_serial>')
+
+with open('data/labels.json', 'r') as f:
+    labels = json.load(f)
+
+with open('data/exams.json', 'r') as f:
+    exams = json.load(f)
+
+@app.get('/request/<int:request_serial>')
 def get_request(request_serial: int):
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(request_query, [request_serial], prepare=True)
-            return cur.fetchall()
+            if result := cur.fetchone():
+                result['tokenised'] = tokenise_request(result['requested_exam'])
+                try:
+                    autotriage = dict(code=labels[result['modality']][result['tokenised']])
+                except KeyError:
+                    autotriage = None
+                else:
+                    autotriage['body_part'], autotriage['exam'] = exams[result['modality']][autotriage['code']]
+                result['autotriage'] = autotriage
+                return result
+    return jsonify() # return null if no request found
