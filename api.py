@@ -46,6 +46,7 @@ select
         when 'X' then '4 weeks'
         when 'Y' then '6 weeks'
         when 'P' then 'Planned'
+        when 'D' then 'DAROT'
     end urgency,
     pa_nhi::text as nhi,
     initcap(pa_surname) as pa_surname,
