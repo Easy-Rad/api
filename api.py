@@ -48,8 +48,8 @@ select
         when 'P' then 'Planned'
     end urgency,
     pa_nhi::text as nhi,
-    pa_surname::text,
-    pa_firstname::text,
+    initcap(pa_surname) as pa_surname,
+    initcap(pa_firstname) as pa_firstname,
     rf_pat_location::text as location,
     rf_exam_type::text as exam_type,
     rf_reason::text as description,
