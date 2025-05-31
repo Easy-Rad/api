@@ -51,7 +51,6 @@ select
     initcap(pa_surname) as pa_surname,
     initcap(pa_firstname) as pa_firstname,
     rf_pat_location::text as location,
-    rf_exam_type::text as exam_type,
     rf_reason::text as description,
     extract(epoch from rf_dor at time zone 'Pacific/Auckland')::int as received,
     coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document gen_text.te_text))::text[]) as p
@@ -68,24 +67,17 @@ where (rf_new_rf_serial=0 or rf_new_rf_serial is null)
 and rf_status='W'
 and rf_site in ('CDHB','EMER')
 and rf_pat_type in ('INP','ED')
-and (%(modality)s::text is null or rf_exam_type=%(modality)s)
+and rf_exam_type=%s
 order by rf_dor desc
 limit 100
 """
 
-@app.get('/dashboard')
-def get_dashboard():
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(dashboard_query, dict(modality=None), prepare=True)
-            return cur.fetchall()
-
 @app.get('/dashboard/<modality>')
 # ["CT", "DI", "DS", "DX", "MC", "MM", "MR", "NM", "NO", "OD", "OT", "PT", "SC", "US", "XR"]
-def get_dashboard_modality(modality: str):
+def get_dashboard(modality: str):
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(dashboard_query, dict(modality=modality), prepare=True)
+            cur.execute(dashboard_query, [modality], prepare=True)
             return cur.fetchall()
 
 comrad_sessions = r"""
