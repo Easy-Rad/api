@@ -35,7 +35,7 @@ def health():
 dashboard_query = r"""
 select
     rf_site::text site,
-    rf_pat_type::text pat_type,
+    rf_pat_type::text patient_type,
     case (rf_priority)
         when 'S' then 'STAT'
         when 'O' then '1 hour'
@@ -47,42 +47,45 @@ select
         when 'Y' then '6 weeks'
         when 'P' then 'Planned'
     end urgency,
-    case rf_triage_status
-        when 'I' then 'In progress'
-        when 'C' then 'Complete'
-        end
-        as triage_status,
     pa_nhi::text as nhi,
     pa_surname::text,
     pa_firstname::text,
     rf_pat_location::text as location,
+    rf_exam_type::text as exam_type,
     rf_reason::text as description,
     extract(epoch from rf_dor at time zone 'Pacific/Auckland')::int as received,
-    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document mit_text.te_text))::text[]) as p
-        where trim(p) != ''), array[]::text[]) as mit_notes,
-    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document dr_text.te_text))::text[]) as p
-        where trim(p) != ''), array []::text[])  dr_notes
+    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document gen_text.te_text))::text[]) as p
+        where trim(p) != ''), array[]::text[]) as gen_notes,
+    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document rad_text.te_text))::text[]) as p
+        where trim(p) != ''), array []::text[]) as rad_notes
 from case_referral
 join patient on rf_pno=pa_pno
-left join notes mit_notes on rf_serial=mit_notes.no_key and mit_notes.no_type='F' and mit_notes.no_category='Q' and mit_notes.no_sub_category='M' and mit_notes.no_sub_category='M' and mit_notes.no_status='A'
-left join notes dr_notes on rf_serial = dr_notes.no_key and dr_notes.no_type = 'F' and dr_notes.no_category = 'Q' and dr_notes.no_sub_category = 'G' and dr_notes.no_status = 'A'
-left join doctext mit_text on mit_notes.no_serial = mit_text.te_key and xml_is_well_formed_document(mit_text.te_text)
-left join doctext dr_text on dr_notes.no_serial = dr_text.te_key and xml_is_well_formed_document(dr_text.te_text)
+left join notes gen_notes on rf_serial = gen_notes.no_key and gen_notes.no_type = 'F' and gen_notes.no_category = 'Q' and gen_notes.no_sub_category = 'M' and gen_notes.no_status = 'A'
+left join notes rad_notes on rf_serial = rad_notes.no_key and rad_notes.no_type = 'F' and rad_notes.no_category = 'Q' and rad_notes.no_sub_category = 'G' and rad_notes.no_status = 'A'
+left join doctext gen_text on gen_notes.no_serial = gen_text.te_key and xml_is_well_formed_document(gen_text.te_text)
+left join doctext rad_text on rad_notes.no_serial = rad_text.te_key and xml_is_well_formed_document(rad_text.te_text)
 where (rf_new_rf_serial=0 or rf_new_rf_serial is null)
 and rf_status='W'
 and rf_site in ('CDHB','EMER')
 and rf_pat_type in ('INP','ED')
-and rf_exam_type=%s
+and (%(modality)s::text is null or rf_exam_type=%(modality)s)
 order by rf_dor desc
 limit 100
 """
 
-@app.get('/dashboard/<modality>')
-# ["CT", "DI", "DS", "DX", "MC", "MM", "MR", "NM", "NO", "OD", "OT", "PT", "SC", "US", "XR"]
-def get_dashboard(modality: str):
+@app.get('/dashboard')
+def get_dashboard():
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(dashboard_query, [modality], prepare=True)
+            cur.execute(dashboard_query, dict(modality=None), prepare=True)
+            return cur.fetchall()
+
+@app.get('/dashboard/<modality>')
+# ["CT", "DI", "DS", "DX", "MC", "MM", "MR", "NM", "NO", "OD", "OT", "PT", "SC", "US", "XR"]
+def get_dashboard_modality(modality: str):
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(dashboard_query, dict(modality=modality), prepare=True)
             return cur.fetchall()
 
 comrad_sessions = r"""
