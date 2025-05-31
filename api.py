@@ -34,8 +34,8 @@ def health():
 
 dashboard_query = r"""
 select
-    rf_site site,
-    rf_pat_type pat_type,
+    rf_site::text site,
+    rf_pat_type::text pat_type,
     case (rf_priority)
         when 'S' then 'STAT'
         when 'O' then '1 hour'
@@ -56,7 +56,7 @@ select
     pa_surname::text,
     pa_firstname::text,
     rf_pat_location::text as location,
-    rf_reason as description,
+    rf_reason::text as description,
     extract(epoch from rf_dor at time zone 'Pacific/Auckland')::int as received,
     coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document mit_text.te_text))::text[]) as p
         where trim(p) != ''), array[]::text[]) as mit_notes,
