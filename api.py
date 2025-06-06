@@ -262,3 +262,49 @@ def get_request(request_serial: int):
                 result['autotriage'] = autotriage
                 return result
     return jsonify() # return null if no request found
+
+with open('data/body_parts.json', 'r') as f:
+    body_parts = json.load(f)
+
+ffs_query=r"""
+select
+re_serial as serial,
+extract(epoch from ct_dor at time zone 'Pacific/Auckland')::int as reported,
+or_accession_no::text as accession,
+case when or_ex_type='OD' then 'XR' else or_ex_type::text end as modality,
+ce_description::text as description
+from case_staff
+join orders on or_event_serial = ct_ce_serial and or_status!='X'
+join reports on ct_key_type='R' and ct_key = re_serial and re_status !='X'
+join staff on re_dictator = st_serial
+join case_event on ct_ce_serial = ce_serial
+join sel_table as site on site.sl_code = 'SIT' and ce_site = sl_key and sl_aux1 = 'CDHB' and ce_site NOT IN ('HAN', 'KAIK')
+where
+st_user_code=%s
+and or_ex_type in ('CT', 'MR', 'US', 'XR' , 'OD')
+and ct_staff_function ='R'
+and ct_dor > now() at time zone 'Pacific/Auckland' - '2 weeks'::interval
+order by ct_dor
+"""
+@app.get('/ffs/<user_code>')
+def get_ffs(user_code: str):
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(ffs_query, [user_code], prepare=True)
+            results = cur.fetchall()
+    for result in results:
+        if result['modality'] in ('XR','CT'):
+            try: bps = body_parts[result['description']]
+            except KeyError: continue
+        else: bps = 1
+        match result['modality']:
+            case 'XR': fee = 35 if bps >= 3 else 20 if bps >= 2 else 12 if bps >= 1 else 0
+            case 'CT': fee = 200 if bps >= 4 else 160 if bps >= 3 else 135 if bps >= 2 else 60 if bps >= 1 else 0
+            case 'MR': fee = 75 if bps >= 1 else 0
+            case 'US': fee = 12 if bps >= 1 else 0
+            case _: continue
+        result['ffs']=dict(
+            body_parts = bps,
+            fee = fee,
+        )
+    return results
