@@ -2,3 +2,4 @@ psycopg[binary]
 psycopg-pool
 Flask
 gunicorn
+pymssql

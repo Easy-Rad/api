@@ -2,7 +2,8 @@ import atexit
 import json
 from os import environ
 
-from flask import Flask, jsonify
+from app import app
+from flask import jsonify
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -25,12 +26,6 @@ pool = ConnectionPool(
     )
 )
 atexit.register(pool.close)
-
-app = Flask(__name__)
-
-@app.get('/health')
-def health():
-    return dict(status="healthy")
 
 dashboard_query = r"""
 select
