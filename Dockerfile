@@ -45,7 +45,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Add healthcheck
-HEALTHCHECK --interval=30s --start-period=5s --timeout=2s \
+HEALTHCHECK --interval=30s --start-period=10s --timeout=2s \
     CMD curl -f http://localhost:5001/health || exit 1
 
 # Expose port
