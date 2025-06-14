@@ -1,7 +1,9 @@
 from os import environ
+
 import pymssql
 
 from app import app
+
 
 def connection():
     return pymssql.connect(
@@ -12,7 +14,7 @@ def connection():
         tds_version='7.4',
     )
 
-base_roster_query = r"""
+base_roster_query_user = r"""
 select DayNum as day, ShiftName as shift
 from Pattern
 join Shift on Shift.ShiftID=Pattern.ShiftID
@@ -21,15 +23,40 @@ where Employee.Abbr=%s
 and IsRetired=0
 order by DayNum, StartTime
 """
-@app.get('/base_roster/<user_code>')
-def get_base_roster(user_code: str):
+@app.get('/base_roster/user/<string:user_code>')
+def get_base_roster_user(user_code: str):
     output = {}
     with connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(base_roster_query, user_code)
+            cursor.execute(base_roster_query_user, user_code)
             for day, shift in cursor:
                 try:
                     output[day].append(shift)
                 except KeyError:
                     output[day] = [shift]
+    return output
+
+base_roster_query_shift = r"""
+select DayNum as day,
+       Employee.Abbr as user_code,
+       Employee.FirstName as first,
+       Employee.LastName as last
+from Pattern
+join Shift on Shift.ShiftID=Pattern.ShiftID
+join Employee on Pattern.EmployeeID=Employee.EmployeeID
+where ShiftName=%s
+order by DayNum, Employee.LastName
+"""
+@app.get('/base_roster/shift/<string:shift_name>')
+def get_base_roster_shift(shift_name: str):
+    output = {}
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(base_roster_query_shift, shift_name)
+            for day, user_code, first, last in cursor:
+                entry = (user_code, first, last)
+                try:
+                    output[day].append(entry)
+                except KeyError:
+                    output[day] = [entry]
     return output
