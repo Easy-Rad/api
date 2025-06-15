@@ -14,6 +14,33 @@ def connection():
         tds_version='7.4',
     )
 
+base_roster_query_users = r"""
+select distinct Employee.Abbr, FirstName, LastName
+from Pattern
+join Employee on Pattern.EmployeeID=Employee.EmployeeID
+order by LastName
+"""
+@app.get('/base_roster/users')
+def get_base_roster_users():
+    output = []
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(base_roster_query_users)
+            return cursor.fetchall()
+
+base_roster_query_shifts = r"""
+select distinct ShiftName
+from Pattern
+join Shift on Shift.ShiftID = Pattern.ShiftID
+order by ShiftName
+"""
+@app.get('/base_roster/shifts')
+def get_base_roster_shifts():
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(base_roster_query_shifts)
+            return [shift for shift, in cursor.fetchall()]
+
 base_roster_query_user = r"""
 select DayNum as day, ShiftName as shift
 from Pattern
