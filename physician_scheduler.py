@@ -87,3 +87,35 @@ def get_base_roster_shift(shift_name: str):
                 except KeyError:
                     output[day] = [entry]
     return output
+
+requests_user_query = r"""
+select top 100
+DATEDIFF(s, '1970-01-01', AddedDate AT TIME ZONE 'New Zealand Standard Time') as added,
+DATEDIFF(s, '1970-01-01', datetime2fromparts(
+    StartDate/10000,
+    StartDate/100%100,
+    StartDate%100,
+    R.StartTime%2400/100,
+    R.StartTime%100,
+    0, 0, 0
+) AT TIME ZONE 'New Zealand Standard Time') as start,
+DATEDIFF(s, '1970-01-01', datetime2fromparts(
+    EndDate/10000,
+    EndDate/100%100,
+    EndDate%100,
+    R.EndTime%2400/100,
+    R.EndTime%100,
+    0, 0, 0
+) AT TIME ZONE 'New Zealand Standard Time') as finish,
+ShiftName as shift
+from Request R
+join dbo.Employee on R.EmployeeID = Employee.EmployeeID
+join Shift on R.ShiftID = Shift.ShiftID
+where Employee.Abbr=%s
+order by start desc"""
+@app.get('/requests/user/<string:user_code>')
+def get_requests_user(user_code: str):
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(requests_user_query, user_code)
+            return [shift for shift in cursor.fetchall()]
