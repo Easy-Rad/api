@@ -89,7 +89,7 @@ def get_base_roster_shift(shift_name: str):
     return output
 
 requests_user_query = r"""
-select top 100
+select
 DATEDIFF(s, '1970-01-01', AddedDate AT TIME ZONE 'New Zealand Standard Time') as added,
 DATEDIFF(s, '1970-01-01', datetime2fromparts(
     StartDate/10000,
@@ -112,10 +112,48 @@ from Request R
 join dbo.Employee on R.EmployeeID = Employee.EmployeeID
 join Shift on R.ShiftID = Shift.ShiftID
 where Employee.Abbr=%s
-order by start desc"""
+and StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
+order by StartDate, R.StartTime
+"""
 @app.get('/requests/user/<string:user_code>')
 def get_requests_user(user_code: str):
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(requests_user_query, user_code)
-            return [shift for shift in cursor.fetchall()]
+            return cursor.fetchall()
+
+requests_shift_query = r"""
+select
+DATEDIFF(s, '1970-01-01', AddedDate AT TIME ZONE 'New Zealand Standard Time') as added,
+DATEDIFF(s, '1970-01-01', datetime2fromparts(
+    StartDate/10000,
+    StartDate/100%100,
+    StartDate%100,
+    R.StartTime%2400/100,
+    R.StartTime%100,
+    0, 0, 0
+) AT TIME ZONE 'New Zealand Standard Time') as start,
+DATEDIFF(s, '1970-01-01', datetime2fromparts(
+    EndDate/10000,
+    EndDate/100%100,
+    EndDate%100,
+    R.EndTime%2400/100,
+    R.EndTime%100,
+    0, 0, 0
+) AT TIME ZONE 'New Zealand Standard Time') as finish,
+Employee.Abbr as user_code,
+Employee.FirstName as first,
+Employee.LastName as last
+from Request R
+join dbo.Employee on R.EmployeeID = Employee.EmployeeID
+join Shift on R.ShiftID = Shift.ShiftID
+where Shift.ShiftName=%s
+and StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
+order by StartDate, R.StartTime
+"""
+@app.get('/requests/shift/<string:user_code>')
+def get_requests_shift(user_code: str):
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(requests_shift_query, user_code)
+            return cursor.fetchall()
