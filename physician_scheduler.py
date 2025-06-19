@@ -22,7 +22,6 @@ order by LastName
 """
 @app.get('/base_roster/users')
 def get_base_roster_users():
-    output = []
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_users)
@@ -88,7 +87,42 @@ def get_base_roster_shift(shift_name: str):
                     output[day] = [entry]
     return output
 
-requests_user_query = r"""
+requests_query_users = r"""
+select
+Abbr as user_code,
+FirstName as first,
+LastName as last
+from (select EmployeeID
+from Request
+where StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
+group by EmployeeID) R
+join Employee E on R.EmployeeID=E.EmployeeID
+order by LastName
+"""
+@app.get('/requests/users')
+def get_requests_users():
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(requests_query_users)
+            return cursor.fetchall()
+
+requests_query_shifts = r"""
+select distinct ShiftName
+from (select ShiftID
+from Request
+where StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
+group by ShiftID) R
+join Shift S on R.ShiftId=S.ShiftID
+order by ShiftName
+"""
+@app.get('/requests/shifts')
+def get_requests_shifts():
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(requests_query_shifts)
+            return [shift for shift, in cursor.fetchall()]
+
+requests_query_user = r"""
 select
 DATEDIFF(s, '1970-01-01', AddedDate AT TIME ZONE 'New Zealand Standard Time') as added,
 DATEDIFF(s, '1970-01-01', datetime2fromparts(
@@ -119,10 +153,10 @@ order by StartDate, R.StartTime
 def get_requests_user(user_code: str):
     with connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(requests_user_query, user_code)
+            cursor.execute(requests_query_user, user_code)
             return cursor.fetchall()
 
-requests_shift_query = r"""
+requests_query_shift = r"""
 select
 DATEDIFF(s, '1970-01-01', AddedDate AT TIME ZONE 'New Zealand Standard Time') as added,
 DATEDIFF(s, '1970-01-01', datetime2fromparts(
@@ -155,5 +189,6 @@ order by StartDate, R.StartTime
 def get_requests_shift(user_code: str):
     with connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(requests_shift_query, user_code)
+            cursor.execute(requests_query_shift, user_code)
             return cursor.fetchall()
+
