@@ -1,9 +1,8 @@
-from os import environ
-
 import pymssql
-
+from os import environ
+from itertools import groupby
 from app import app
-
+from flask import request
 
 def connection():
     return pymssql.connect(
@@ -51,16 +50,10 @@ order by DayNum, StartTime
 """
 @app.get('/base_roster/user/<string:user_code>')
 def get_base_roster_user(user_code: str):
-    output = {}
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_user, user_code)
-            for day, shift in cursor:
-                try:
-                    output[day].append(shift)
-                except KeyError:
-                    output[day] = [shift]
-    return output
+            return {day:[shift for _, shift in shifts] for day, shifts in groupby(cursor.fetchall(), lambda x: x[0])}
 
 base_roster_query_shift = r"""
 select DayNum as day,
@@ -75,17 +68,10 @@ order by DayNum, Employee.LastName
 """
 @app.get('/base_roster/shift/<string:shift_name>')
 def get_base_roster_shift(shift_name: str):
-    output = {}
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_shift, shift_name)
-            for day, user_code, first, last in cursor:
-                entry = (user_code, first, last)
-                try:
-                    output[day].append(entry)
-                except KeyError:
-                    output[day] = [entry]
-    return output
+            return {day:[(user_code, first_name, last_name) for _, user_code, first_name, last_name in users] for day, users in groupby(cursor.fetchall(), lambda x: x[0])}
 
 requests_query_users = r"""
 select
@@ -192,3 +178,47 @@ def get_requests_shift(user_code: str):
             cursor.execute(requests_query_shift, user_code)
             return cursor.fetchall()
 
+calendar_query = r"""
+declare @today int = year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
+select AssignDate, SchedData.ShiftID, ShiftName, Employee.Abbr, FirstName, LastName
+from SchedData
+join Employee on SchedData.EmployeeID = Employee.EmployeeID
+join Shift on SchedData.ShiftID = Shift.ShiftID
+where AssignDate >= coalesce(%d, @today)
+  and AssignDate <= coalesce(%d, @today)
+  and (%s is null or Employee.Abbr = %s)
+  and (%d is null or SchedData.ShiftID = %d)
+order by Shift.DisplayOrder, Shift.ShiftName, Shift.ShiftID
+"""
+@app.get('/calendar')
+def get_calendar_all():
+    start = request.args.get('start', None, type=int)
+    finish = request.args.get('finish', start, type=int)
+    user = request.args.get('user', None, type=str)
+    shift = request.args.get('shift', None, type=int)
+    with connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(calendar_query, (start, finish, user, user, shift, shift))
+            users={}
+            shifts=[]
+            dates=set()
+            current_shift_id = None
+            current_shift_assignments = None
+            for date_int, shift_id, shift_name, user_code, first_name, last_name in cursor:
+                dates.add(date_int)
+                if user_code not in users:
+                    users[user_code]=(first_name, last_name)
+                if shift_id != current_shift_id:
+                    current_shift_id = shift_id
+                    current_shift_assignments = (shift_id, shift_name, {})
+                    shifts.append(current_shift_assignments)
+                if date_int not in (shift_dict := current_shift_assignments[2]):
+                    shift_dict[date_int]=[user_code]
+                else:
+                    shift_dict[date_int].append(user_code)
+            dates=sorted(dates)
+            return dict(
+                users=users,
+                shifts=shifts,
+                dates=dates,
+            )
