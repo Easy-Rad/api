@@ -61,7 +61,7 @@ left join doctext gen_text on gen_notes.no_serial = gen_text.te_key and xml_is_w
 left join doctext rad_text on rad_notes.no_serial = rad_text.te_key and xml_is_well_formed_document(rad_text.te_text)
 where (rf_new_rf_serial=0 or rf_new_rf_serial is null)
 and rf_status='W'
-and rf_site in ('CDHB','EMER')
+and (rf_site in ('CDHB','EMER') or (rf_exam_type='NM' and rf_site='NUC'))
 and rf_pat_type in ('INP','ED')
 and rf_exam_type=%s
 order by rf_dor desc
