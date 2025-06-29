@@ -29,6 +29,7 @@ atexit.register(pool.close)
 
 dashboard_query = r"""
 select
+    rf_registered_id id,
     rf_site::text site,
     rf_pat_type::text patient_type,
     case (rf_priority)
