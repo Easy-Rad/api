@@ -50,16 +50,36 @@ select
     rf_pat_location::text as location,
     rf_reason::text as description,
     extract(epoch from rf_dor at time zone 'Pacific/Auckland')::int as received,
-    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document gen_text.te_text))::text[]) as p
-        where trim(p) != ''), array[]::text[]) as gen_notes,
-    coalesce((select array_agg(trim(p)) from unnest(xpath('//p/text()', xmlparse(document rad_text.te_text))::text[]) as p
-        where trim(p) != ''), array []::text[]) as rad_notes
+    coalesce(gen_notes.notes, array []::text[]) as gen_notes,
+    coalesce(rad_notes.notes, array []::text[]) as rad_notes
 from case_referral
 join patient on rf_pno=pa_pno
-left join notes gen_notes on rf_serial = gen_notes.no_key and gen_notes.no_type = 'F' and gen_notes.no_category = 'Q' and gen_notes.no_sub_category = 'M' and gen_notes.no_status = 'A'
-left join notes rad_notes on rf_serial = rad_notes.no_key and rad_notes.no_type = 'F' and rad_notes.no_category = 'Q' and rad_notes.no_sub_category = 'G' and rad_notes.no_status = 'A'
-left join doctext gen_text on gen_notes.no_serial = gen_text.te_key and xml_is_well_formed_document(gen_text.te_text)
-left join doctext rad_text on rad_notes.no_serial = rad_text.te_key and xml_is_well_formed_document(rad_text.te_text)
+left join lateral (
+    select array_agg(trim(s) order by no_serial) as notes
+    from notes
+    left join doctext on no_serial = te_key and xml_is_well_formed_document(te_text)
+    cross join lateral unnest(xpath('//p/text()', xmlparse(document te_text))::text[]) as s
+    where no_key = rf_serial
+    and no_type = 'F'
+    and no_category = 'Q'
+    and no_sub_category = 'M'
+    and no_status = 'A'
+    and trim(s) <> ''
+    group by rf_registered_id
+) as gen_notes on true
+left join lateral (
+    select array_agg(trim(s) order by no_serial) as notes
+    from notes
+    left join doctext on no_serial = te_key and xml_is_well_formed_document(te_text)
+    cross join lateral unnest(xpath('//p/text()', xmlparse(document te_text))::text[]) as s
+    where no_key = rf_serial
+    and no_type = 'F'
+    and no_category = 'Q'
+    and no_sub_category = 'G'
+    and no_status = 'A'
+    and trim(s) <> ''
+    group by rf_registered_id
+) as rad_notes on true
 where (rf_new_rf_serial=0 or rf_new_rf_serial is null)
 and rf_status='W'
 and (rf_site in ('CDHB','EMER') or (rf_exam_type='NM' and rf_site='NUC'))
