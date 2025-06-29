@@ -66,7 +66,6 @@ and (rf_site in ('CDHB','EMER') or (rf_exam_type='NM' and rf_site='NUC'))
 and rf_pat_type in ('INP','ED')
 and rf_exam_type=%s
 order by rf_dor desc
-limit 100
 """
 
 @app.get('/dashboard/<modality>')
@@ -74,6 +73,8 @@ limit 100
 def get_dashboard(modality: str):
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("set local enable_sort = off")
+            cur.execute("set local jit_above_cost = -1")
             cur.execute(dashboard_query, [modality], prepare=True)
             return cur.fetchall()
 
