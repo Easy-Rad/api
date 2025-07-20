@@ -300,37 +300,6 @@ where rf_serial=%s
 """
 
 
-def _autotriage(
-        user_code: str,
-        version: str,
-        referral: int,
-):
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(autotriage_query, [referral], prepare=True)
-            result = cur.fetchone()
-    if result is None:
-        raise AutoTriageError(f"Invalid referral ID: {referral}")
-    return autotriage(
-        user_code,
-        version,
-        referral,
-        result['modality'],
-        result['requested_exam'],
-        result['normalised_exam'],
-        result['patient_age'],
-        result['egfr'],
-    ) or jsonify()  # return null if no autotriage available
-
-
-@app.get('/autotriage/<int:referral_serial>')
-def get_autotriage(referral_serial: int):
-    try:
-        return _autotriage("Unknown", "Unknown", referral_serial)
-    except AutoTriageError:
-        return jsonify()
-
-
 @app.post('/autotriage')
 def post_autotriage():
     try:
@@ -339,13 +308,27 @@ def post_autotriage():
         except BadRequest:
             raise AutoTriageError("Malformed JSON")
         try:
-            return _autotriage(
-                r["user"],
-                r["version"],
-                r["referral"],
-            )
+            user_code = r["user"]
+            version = r["version"]
+            referral = r["referral"]
         except KeyError as e:
             raise AutoTriageError(f"Missing key: {e.args[0]}")
+        with pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(autotriage_query, [referral], prepare=True)
+                result = cur.fetchone()
+        if result is None:
+            raise AutoTriageError(f"Invalid referral ID: {referral}")
+        return autotriage(
+            user_code,
+            version,
+            referral,
+            result['modality'],
+            result['requested_exam'],
+            result['normalised_exam'],
+            result['patient_age'],
+            result['egfr'],
+        ) or jsonify()  # return null if no autotriage available
     except AutoTriageError as e:
         return dict(error=e.message)
 
