@@ -4,9 +4,11 @@ from os import environ
 
 from app import app
 from flask import jsonify
+from flask import request
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from autotriage import autotriage
+from autotriage import autotriage, AutoTriageError
+from werkzeug.exceptions import BadRequest
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
 DB_PORT = environ.get('DB_PORT', '5432')
@@ -87,6 +89,7 @@ and rf_exam_type=%s
 order by rf_dor desc
 """
 
+
 @app.get('/dashboard/<modality>')
 # ["CT", "DI", "DS", "DX", "MC", "MM", "MR", "NM", "NO", "OD", "OT", "PT", "SC", "US", "XR"]
 def get_dashboard(modality: str):
@@ -96,6 +99,7 @@ def get_dashboard(modality: str):
             cur.execute("set local jit_above_cost = -1")
             cur.execute(dashboard_query, [modality], prepare=True)
             return cur.fetchall()
+
 
 comrad_sessions = r"""
 with log as (
@@ -140,6 +144,7 @@ with open('data/desks.json', 'r') as f:
         phone=desk['DeskPhone'],
     ) for desk in json.load(f)}
 
+
 @app.get('/locator')
 def get_locator():
     result = []
@@ -150,6 +155,7 @@ def get_locator():
                 row['desk'] = desks.get(row['ip'])
                 result.append(row)
             return result
+
 
 triaged_query = r"""
 with codes as (
@@ -216,6 +222,8 @@ from requests
 join patient on rf_pno = pa_pno
 join staff on rf_triage_completed_staff = st_serial
 """
+
+
 @app.get('/triaged')
 def get_triaged():
     with pool.connection() as conn:
@@ -266,7 +274,8 @@ def get_triaged():
 #                 return result
 #     return jsonify() # return null if no request found
 
-autotriage_query= r"""
+
+autotriage_query = r"""
 select
 rf_exam_type modality,
 case
@@ -289,23 +298,62 @@ left join (
 ) xml on no_key = rf_serial
 where rf_serial=%s
 """
-@app.get('/autotriage/<int:request_serial>')
-def get_autotriage(request_serial: int):
+
+
+def _autotriage(
+        user_code: str,
+        version: str,
+        referral: int,
+):
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(autotriage_query, [request_serial], prepare=True)
-            return (result := cur.fetchone()) and autotriage(
-                result['modality'],
-                result['requested_exam'],
-                result['normalised_exam'],
-                result['patient_age'],
-                result['egfr'],
-                ) or jsonify() # return null if no request found or no autotriage
+            cur.execute(autotriage_query, [referral], prepare=True)
+            result = cur.fetchone()
+    if result is None:
+        raise AutoTriageError(f"Invalid referral ID: {referral}")
+    return autotriage(
+        user_code,
+        version,
+        referral,
+        result['modality'],
+        result['requested_exam'],
+        result['normalised_exam'],
+        result['patient_age'],
+        result['egfr'],
+    ) or jsonify()  # return null if no autotriage available
+
+
+@app.get('/autotriage/<int:referral_serial>')
+def get_autotriage(referral_serial: int):
+    try:
+        return _autotriage("Unknown", "Unknown", referral_serial)
+    except AutoTriageError:
+        return jsonify()
+
+
+@app.post('/autotriage')
+def post_autotriage():
+    try:
+        try:
+            r = request.get_json(force=True)
+        except BadRequest:
+            raise AutoTriageError("Malformed JSON")
+        try:
+            return _autotriage(
+                r["user"],
+                r["version"],
+                r["referral"],
+            )
+        except KeyError as e:
+            raise AutoTriageError(f"Missing key: {e.args[0]}")
+    except AutoTriageError as e:
+        return dict(error=e.message)
+
 
 with open('data/body_parts.json', 'r') as f:
     body_parts = json.load(f)
 
-ffs_query=r"""
+ffs_query = r"""
 select
 re_serial as serial,
 extract(epoch from ct_dor at time zone 'Pacific/Auckland')::int as reported,
@@ -325,6 +373,8 @@ and ct_staff_function ='R'
 and ct_dor > now() at time zone 'Pacific/Auckland' - '2 weeks'::interval
 order by ct_dor
 """
+
+
 @app.get('/ffs/<user_code>')
 def get_ffs(user_code: str):
     with pool.connection() as conn:
@@ -332,18 +382,21 @@ def get_ffs(user_code: str):
             cur.execute(ffs_query, [user_code], prepare=True)
             results = cur.fetchall()
     for result in results:
-        if result['modality'] in ('XR','CT'):
-            try: bps = body_parts[result['description']]
-            except KeyError: continue
-        else: bps = 1
+        if result['modality'] in ('XR', 'CT'):
+            try:
+                bps = body_parts[result['description']]
+            except KeyError:
+                continue
+        else:
+            bps = 1
         match result['modality']:
             case 'XR': fee = 35 if bps >= 3 else 20 if bps >= 2 else 12 if bps >= 1 else 0
             case 'CT': fee = 200 if bps >= 4 else 160 if bps >= 3 else 135 if bps >= 2 else 60 if bps >= 1 else 0
             case 'MR': fee = 75 if bps >= 1 else 0
             case 'US': fee = 12 if bps >= 1 else 0
             case _: continue
-        result['ffs']=dict(
-            body_parts = bps,
-            fee = fee,
+        result['ffs'] = dict(
+            body_parts=bps,
+            fee=fee,
         )
     return results
