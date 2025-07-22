@@ -55,6 +55,10 @@ def autotriage(
 ) -> dict | None:
     tokenised = tokenise_request(
         requested_exam) if requested_exam is not None else tokenise_request(normalised_exam)
+    request=dict(
+        modality=modality,
+        exam=requested_exam or normalised_exam,
+    )
     with pool_autotriage.connection() as conn:
         with conn.execute(autotriage_query, [user_code, tokenised, modality], prepare=True) as cur:
             result = cur.fetchone()
@@ -66,13 +70,6 @@ def autotriage(
             if code == 'Q25' and (patient_age >= 80 or egfr is not None and egfr < 30):
                 code = 'Q25T'  # Barium-tagged CT colonography
             result = dict(
-                request=dict(
-                    exam=requested_exam,
-                    normalised_exam=normalised_exam,
-                    tokenised=tokenised,
-                    patient_age=patient_age,
-                    egfr=egfr,
-                ),
                 body_part=body_part,
                 code=code,
                 exam=exam,
@@ -91,4 +88,7 @@ def autotriage(
                 tokenised,
                 code,
             ], prepare=True)
-        return result
+        return dict(
+            request=request,
+            result=result,
+        )

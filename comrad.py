@@ -328,7 +328,7 @@ def post_autotriage():
             result['normalised_exam'],
             result['patient_age'],
             result['egfr'],
-        ) or jsonify()  # return null if no autotriage available
+        )
     except AutoTriageError as e:
         return dict(error=e.message)
 
