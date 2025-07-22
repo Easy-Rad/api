@@ -42,6 +42,12 @@ insert into triage_log (
 ) values (%s, %s, %s, %s, %s, %s, %s, %s)
 """
 
+autotriage_remember = r"""
+insert into label (username, modality, tokenised, code)
+values (%s, %s, %s, %s)
+on conflict (tokenised, modality, username) do update
+set code = excluded.code
+"""
 
 def autotriage(
     user_code: str,
@@ -92,3 +98,12 @@ def autotriage(
             request=request,
             result=result,
         )
+
+def remember(
+    user: str,
+    modality: str,
+    exam: str,
+    code: str,
+) -> None:
+    with pool_autotriage.connection() as conn:
+        conn.execute(autotriage_remember, [user, modality, tokenise_request(exam), code], prepare=True)

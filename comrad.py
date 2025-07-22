@@ -7,7 +7,7 @@ from flask import jsonify
 from flask import request
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from autotriage import autotriage, AutoTriageError
+from autotriage import autotriage, AutoTriageError, remember
 from werkzeug.exceptions import BadRequest
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
@@ -330,8 +330,27 @@ def post_autotriage():
             result['egfr'],
         )
     except AutoTriageError as e:
-        return dict(error=e.message)
+        return dict(error=e.message), 400
 
+@app.post('/autotriage/remember')
+def autotriage_remember():
+    try:
+        try:
+            r = request.get_json(force=True)
+        except BadRequest:
+            raise AutoTriageError("Malformed JSON")
+        try:
+            remember(
+                r["user"],
+                r["modality"],
+                r["exam"],
+                r["code"],
+            )
+            return '', 204
+        except KeyError as e:
+            raise AutoTriageError(f"Missing key: {e.args[0]}")
+    except AutoTriageError as e:
+        return dict(error=e.message), 400
 
 with open('data/body_parts.json', 'r') as f:
     body_parts = json.load(f)
