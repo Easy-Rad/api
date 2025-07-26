@@ -12,6 +12,8 @@ class AutoTriageError(Exception):
 
 pool_autotriage = ConnectionPool(
     environ['AUTOTRIAGE_CONN'],
+    min_size=1,
+    max_size=4,
     open=True,
 )
 atexit.register(pool_autotriage.close)

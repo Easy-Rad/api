@@ -18,6 +18,8 @@ DB_PASSWORD = environ['DB_PASSWORD']
 
 pool = ConnectionPool(
     open=True,
+    min_size=1,
+    max_size=4,
     kwargs=dict(
         host=DB_HOST,
         port=DB_PORT,

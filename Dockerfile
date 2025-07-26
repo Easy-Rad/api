@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --start-period=10s --timeout=2s \
 EXPOSE 5001
 
 # Use gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "--threads", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--worker-class", "gevent", "app:app"]
