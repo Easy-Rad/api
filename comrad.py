@@ -1,13 +1,13 @@
 import atexit
 import json
 from os import environ
-
+from datetime import date
 from app import app
-from flask import jsonify
 from flask import request
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from autotriage import autotriage, AutoTriageError, remember
+from error import ApiError
+from coolify import autotriage, remember_autotriage, ffs
 from werkzeug.exceptions import BadRequest
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
@@ -308,19 +308,19 @@ def post_autotriage():
         try:
             r = request.get_json(force=True)
         except BadRequest:
-            raise AutoTriageError("Malformed JSON")
+            raise ApiError("Malformed JSON")
         try:
             user_code = r["user"]
             version = r["version"]
             referral = r["referral"]
         except KeyError as e:
-            raise AutoTriageError(f"Missing key: {e.args[0]}")
+            raise ApiError(f"Missing key: {e.args[0]}")
         with pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(autotriage_query, [referral], prepare=True)
                 result = cur.fetchone()
         if result is None:
-            raise AutoTriageError(f"Invalid referral ID: {referral}")
+            raise ApiError(f"Invalid referral ID: {referral}")
         return autotriage(
             user_code,
             version,
@@ -331,7 +331,7 @@ def post_autotriage():
             result['patient_age'],
             result['egfr'],
         )
-    except AutoTriageError as e:
+    except ApiError as e:
         return dict(error=e.message), 400
 
 @app.post('/autotriage/remember')
@@ -340,9 +340,9 @@ def autotriage_remember():
         try:
             r = request.get_json(force=True)
         except BadRequest:
-            raise AutoTriageError("Malformed JSON")
+            raise ApiError("Malformed JSON")
         try:
-            remember(
+            remember_autotriage(
                 r["user"],
                 r["modality"],
                 r["exam"],
@@ -350,57 +350,78 @@ def autotriage_remember():
             )
             return '', 204
         except KeyError as e:
-            raise AutoTriageError(f"Missing key: {e.args[0]}")
-    except AutoTriageError as e:
+            raise ApiError(f"Missing key: {e.args[0]}")
+    except ApiError as e:
         return dict(error=e.message), 400
 
 with open('data/body_parts.json', 'r') as f:
     body_parts = json.load(f)
 
 ffs_query = r"""
-select
-re_serial as serial,
-extract(epoch from ct_dor at time zone 'Pacific/Auckland')::int as reported,
-or_accession_no::text as accession,
-case when or_ex_type='OD' then 'XR' else or_ex_type::text end as modality,
-ce_description::text as description
-from case_staff
-join orders on or_event_serial = ct_ce_serial and or_status!='X'
-join reports on ct_key_type='R' and ct_key = re_serial and re_status !='X'
-join staff on re_dictator = st_serial
-join case_event on ct_ce_serial = ce_serial
-join sel_table as site on site.sl_code = 'SIT' and ce_site = sl_key and sl_aux1 = 'CDHB' and ce_site NOT IN ('HAN', 'KAIK')
-where
-st_user_code=%s
-and or_ex_type in ('CT', 'MR', 'US', 'XR' , 'OD')
-and ct_staff_function ='R'
-and ct_dor > now() at time zone 'Pacific/Auckland' - '2 weeks'::interval
-order by ct_dor
+with reports as (
+    select
+    case_staff_V.ct_dor as nz_time,
+    extract(hour from case_staff_V.ct_dor) not between 8 and 17 as nz_after_hours,
+    extract(isodow from case_staff_V.ct_dor) > 5 as nz_weekend,
+    date(case_staff_V.ct_dor) in (date('2025-04-18'), date('2025-04-21'), date('2025-04-25')) as nz_holiday,
+    case_staff_V.ct_dor at time zone 'Pacific/Auckland' at time zone %s as local_time,
+    or_accession_no::text,
+    case when or_ex_type = 'OD' then 'XR' else or_ex_type end as examType,
+    ce_description,
+    ce_start,
+    ce_site::text,
+    staff_V.st_surname || ', ' || staff_V.st_firstnames as verifier,
+    case when staff_R.st_serial <> staff_V.st_serial then staff_R.st_surname || ', ' || staff_R.st_firstnames end as prelim_reporter
+    from case_staff case_staff_V
+    join staff staff_V on st_serial = ct_staff_serial
+    join case_event on case_staff_V.ct_ce_serial = ce_serial and case_staff_V.ct_staff_function = 'R'
+    join case_staff case_staff_R on case_staff_R.ct_ce_serial = ce_serial and case_staff_R.ct_staff_function = 'V'
+    join staff staff_R on staff_R.st_serial = case_staff_R.ct_staff_serial
+    join reports on case_staff_V.ct_key = re_serial and case_staff_V.ct_key_type = 'R' and case_staff_R.ct_key = re_serial and case_staff_R.ct_key_type = 'R' and re_old_version = 0
+    join orders on or_event_serial = ce_serial and or_status != 'X'
+    join sel_table as site ON ce_site = site.sl_key AND site.sl_code = 'SIT'
+    where staff_V.st_user_code = %s
+    and case_staff_V.ct_dor >= %s and case_staff_V.ct_dor < %s + 1
+    and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
+    and site.sl_aux1 = 'CDHB'
+    and ce_site NOT IN ('HAN', 'KAIK')
+),
+critieria as (
+    select *,
+    nz_after_hours or nz_weekend or nz_holiday as nz_eligible,
+    extract(hour from local_time) between 6 and 22 as local_eligible
+    from reports
+)
+select *,
+nz_eligible and local_eligible as eligible
+from critieria
+where coalesce(%s = (nz_eligible and local_eligible), true)
 """
 
-
-@app.get('/ffs/<user_code>')
-def get_ffs(user_code: str):
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(ffs_query, [user_code], prepare=True)
-            results = cur.fetchall()
-    for result in results:
-        if result['modality'] in ('XR', 'CT'):
-            try:
-                bps = body_parts[result['description']]
-            except KeyError:
-                continue
-        else:
-            bps = 1
-        match result['modality']:
-            case 'XR': fee = 35 if bps >= 3 else 20 if bps >= 2 else 12 if bps >= 1 else 0
-            case 'CT': fee = 200 if bps >= 4 else 160 if bps >= 3 else 135 if bps >= 2 else 60 if bps >= 1 else 0
-            case 'MR': fee = 75 if bps >= 1 else 0
-            case 'US': fee = 12 if bps >= 1 else 0
-            case _: continue
-        result['ffs'] = dict(
-            body_parts=bps,
-            fee=fee,
-        )
-    return results
+@app.post('/ffs')
+def post_ffs():
+    try:
+        try:
+            r = request.get_json(force=True)
+        except BadRequest:
+            raise ApiError("Malformed JSON")
+        with pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                try:
+                    cur.execute(ffs_query, [
+                        r["timezone"],
+                        r["user"],
+                        date.fromisoformat(r["from"]),
+                        date.fromisoformat(r["to"]),
+                        r["eligible"],
+                    ],prepare=True)
+                except KeyError as e:
+                    raise ApiError(f"Missing key: {e.args[0]}")
+                except ValueError as e:
+                    raise ApiError(str(e))
+                except:
+                    raise ApiError("Invalid request")
+                else:
+                    return ffs(cur.fetchall())
+    except ApiError as e:
+        return dict(error=e.message), 400
