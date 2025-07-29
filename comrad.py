@@ -1,7 +1,7 @@
 import atexit
 import json
 from os import environ
-from datetime import date
+from datetime import date, timedelta
 from app import app
 from flask import request
 from psycopg.rows import dict_row
@@ -9,6 +9,8 @@ from psycopg_pool import ConnectionPool
 from error import ApiError
 from coolify import autotriage, remember_autotriage, ffs
 from werkzeug.exceptions import BadRequest
+from zoneinfo import ZoneInfo
+import holidays
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')
 DB_PORT = environ.get('DB_PORT', '5432')
@@ -357,13 +359,15 @@ def autotriage_remember():
 with open('data/body_parts.json', 'r') as f:
     body_parts = json.load(f)
 
+HOLIDAYS = holidays.country_holidays('NZ', subdiv='CAN')
+
 ffs_query = r"""
 with reports as (
     select
     case_staff_V.ct_dor as nz_time,
     extract(hour from case_staff_V.ct_dor) not between 8 and 17 as nz_after_hours,
     extract(isodow from case_staff_V.ct_dor) > 5 as nz_weekend,
-    date(case_staff_V.ct_dor) in (date('2025-04-18'), date('2025-04-21'), date('2025-04-25')) as nz_holiday,
+    date(case_staff_V.ct_dor) = any(%s) as nz_holiday,
     case_staff_V.ct_dor at time zone 'Pacific/Auckland' at time zone %s as local_time,
     or_accession_no::text,
     case when or_ex_type = 'OD' then 'XR' else or_ex_type end as examType,
@@ -408,13 +412,20 @@ def post_ffs():
         with pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 try:
+                    from_date, to_date = date.fromisoformat(r["from"]), date.fromisoformat(r["to"])
+                    if (delta := (to_date - from_date).days) >= 28:
+                        raise ApiError("Maximum 28 days")
+                    holidays = [d for d in (from_date + timedelta(days=x) for x in range(delta + 1)) if d in HOLIDAYS]
                     cur.execute(ffs_query, [
+                        holidays,
                         r["timezone"],
                         r["user"],
-                        date.fromisoformat(r["from"]),
-                        date.fromisoformat(r["to"]),
+                        from_date,
+                        to_date,
                         r["eligible"],
                     ],prepare=True)
+                except ApiError:
+                    raise
                 except KeyError as e:
                     raise ApiError(f"Missing key: {e.args[0]}")
                 except ValueError as e:
