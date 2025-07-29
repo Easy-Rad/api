@@ -53,7 +53,7 @@ def get_base_roster_user(user_code: str):
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_user, user_code)
-            return {day:[shift for _, shift in shifts] for day, shifts in groupby(cursor.fetchall(), lambda x: x[0])}
+            return {str(day):[shift for _, shift in shifts] for day, shifts in groupby(cursor.fetchall(), lambda x: x[0])}
 
 base_roster_query_shift = r"""
 select DayNum as day,
@@ -71,7 +71,7 @@ def get_base_roster_shift(shift_name: str):
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_shift, shift_name)
-            return {day:[(user_code, first_name, last_name) for _, user_code, first_name, last_name in users] for day, users in groupby(cursor.fetchall(), lambda x: x[0])}
+            return {str(day):[(user_code, first_name, last_name) for _, user_code, first_name, last_name in users] for day, users in groupby(cursor.fetchall(), lambda x: x[0])}
 
 requests_query_users = r"""
 select
@@ -212,10 +212,11 @@ def get_calendar_all():
                     current_shift_id = shift_id
                     current_shift_assignments = (shift_id, shift_name, {})
                     shifts.append(current_shift_assignments)
-                if date_int not in (shift_dict := current_shift_assignments[2]):
-                    shift_dict[date_int]=[user_code]
+                date_str = str(date_int)
+                if date_str not in (shift_dict := current_shift_assignments[2]):
+                    shift_dict[date_str]=[user_code]
                 else:
-                    shift_dict[date_int].append(user_code)
+                    shift_dict[date_str].append(user_code)
             dates=sorted(dates)
             return dict(
                 users=users,
