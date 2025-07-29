@@ -183,7 +183,7 @@ declare @today int = year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) 
 select AssignDate, SchedData.ShiftID, ShiftName, Employee.Abbr, FirstName, LastName
 from SchedData
 join Employee on SchedData.EmployeeID = Employee.EmployeeID
-join Shift on SchedData.ShiftID = Shift.ShiftID
+join Shift on SchedData.ShiftID = Shift.ShiftID and Shift.ProfileID = 0
 where AssignDate >= coalesce(%d, @today)
   and AssignDate <= coalesce(%d, @today)
   and (%s is null or Employee.Abbr = %s)
