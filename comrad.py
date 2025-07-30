@@ -381,7 +381,7 @@ with reports as (
     join case_event on case_staff_V.ct_ce_serial = ce_serial and case_staff_V.ct_staff_function = 'R'
     join case_staff case_staff_R on case_staff_R.ct_ce_serial = ce_serial and case_staff_R.ct_staff_function = 'V'
     join staff staff_R on staff_R.st_serial = case_staff_R.ct_staff_serial
-    join reports on case_staff_V.ct_key = re_serial and case_staff_V.ct_key_type = 'R' and case_staff_R.ct_key = re_serial and case_staff_R.ct_key_type = 'R' and re_old_version = 0
+    join reports on case_staff_V.ct_key = re_serial and case_staff_V.ct_key_type = 'R' and case_staff_R.ct_key = re_serial and case_staff_R.ct_key_type = 'R' and (re_old_version is null or re_old_version = 0)
     join orders on or_event_serial = ce_serial and or_status != 'X'
     join sel_table as site ON ce_site = site.sl_key AND site.sl_code = 'SIT'
     where staff_V.st_user_code = %s
