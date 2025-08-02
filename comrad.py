@@ -361,6 +361,33 @@ with open('data/body_parts.json', 'r') as f:
 
 HOLIDAYS = holidays.country_holidays('NZ', subdiv='CAN')
 
+ffs_users = r"""
+with staff_list as (
+    select distinct ct_staff_serial
+    from case_staff
+    join case_event on ct_ce_serial = ce_serial and ct_staff_function = 'R'
+    join reports on ct_key = re_serial and ct_key_type = 'R' and (re_old_version is null or re_old_version = 0)
+    join orders on or_event_serial = ce_serial and or_status != 'X'
+    join sel_table as site ON ce_site = site.sl_key AND site.sl_code = 'SIT'
+    where ct_dor >= %s and ct_dor < %s + 1
+    and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
+    and site.sl_aux1 = 'CDHB'
+    and ce_site NOT IN ('HAN', 'KAIK')
+    and (
+        extract(hour from ct_dor) not between 8 and 17
+        or extract(isodow from ct_dor) > 5
+        or date(ct_dor) = any(%s)
+    )
+)
+select st_user_code::text, st_surname::text, st_firstnames::text
+from staff_list
+join staff on st_serial = ct_staff_serial
+where st_job_class = 'MC'
+and st_user_code !~ 'Z[A-Z]+RAD'
+and st_user_code <> 'ELR'
+order by st_surname
+"""
+
 ffs_query = r"""
 with reports as (
     select
@@ -416,14 +443,23 @@ def post_ffs():
                     if (delta := (to_date - from_date).days) >= 28:
                         raise ApiError("Maximum 28 days")
                     holidays = [d for d in (from_date + timedelta(days=x) for x in range(delta + 1)) if d in HOLIDAYS]
-                    cur.execute(ffs_query, [
-                        holidays,
-                        r["timezone"],
-                        r["user"],
-                        from_date,
-                        to_date,
-                        r["eligible"],
-                    ],prepare=True)
+                    try:
+                        cur.execute(ffs_query, [
+                            holidays,
+                            r["timezone"],
+                            r["user"],
+                            from_date,
+                            to_date,
+                            r["eligible"],
+                        ],prepare=True)
+                        return ffs(cur.fetchall())
+                    except KeyError:
+                        cur.execute(ffs_users, [
+                            from_date,
+                            to_date,
+                            holidays,
+                        ],prepare=True)
+                        return {u["st_user_code"]: (u["st_firstnames"], u["st_surname"]) for u in cur.fetchall()}
                 except ApiError:
                     raise
                 except KeyError as e:
@@ -432,7 +468,5 @@ def post_ffs():
                     raise ApiError(str(e))
                 except:
                     raise ApiError("Invalid request")
-                else:
-                    return ffs(cur.fetchall())
     except ApiError as e:
         return dict(error=e.message), 400
