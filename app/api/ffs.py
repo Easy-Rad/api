@@ -19,7 +19,7 @@ with staff_list as (
     where ct_dor >= %s and ct_dor < %s + 1
     and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
     and site.sl_aux1 = 'CDHB'
-    and ce_site NOT IN ('HAN', 'KAIK')
+    and ce_site NOT IN ('HAN', 'KAIK', 'CARD')
     and (
         extract(hour from ct_dor) not between 8 and 17
         or extract(isodow from ct_dor) > 5
@@ -46,7 +46,7 @@ with reports as (
     or_accession_no::text,
     case when or_ex_type = 'OD' then 'XR' else or_ex_type end as examType,
     ce_description,
-    ce_start,
+    ce_start as imaged,
     ce_site::text,
     staff_V.st_surname || ', ' || staff_V.st_firstnames as verifier,
     case when staff_R.st_serial <> staff_V.st_serial then staff_R.st_surname || ', ' || staff_R.st_firstnames end as prelim_reporter
@@ -62,7 +62,7 @@ with reports as (
     and case_staff_V.ct_dor >= %s and case_staff_V.ct_dor < %s + 1
     and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
     and site.sl_aux1 = 'CDHB'
-    and ce_site NOT IN ('HAN', 'KAIK')
+    and ce_site NOT IN ('HAN', 'KAIK', 'CARD')
 ),
 critieria as (
     select *,
@@ -117,13 +117,13 @@ async def post_ffs():
                     return {u["st_user_code"]: (u["st_firstnames"], u["st_surname"]) async for u in cur}
         async with local_pool.connection() as conn:
             async with await conn.execute(
-                "select description, parts from unnest(%s::text[]) as description left join ffs_body_parts on name = description",
+                "select name, parts from ffs_body_parts where name=any(%s)",
                 [list(set([result["ce_description"].lower() for result in results if result["examtype"] in ('CT','XR')]))],
                 prepare=True,
                 ) as cur:
                 body_parts = {description: parts async for description, parts in cur}
         total_fee = 0
-        unknowns = []
+        unknowns = dict(XR=set(), CT=set())
         tally = dict(
             CT=[0, 0, 0, 0],
             XR=[0, 0, 0],
@@ -131,13 +131,18 @@ async def post_ffs():
             US=[0],
         )
         for result in results:
+            if not (result['local_eligible'] and (result['nz_weekend'] or result['nz_holiday'] or result['nz_after_hours'])):
+                continue
             if result['examtype'] in ('CT','XR'):
-                bps = body_parts[result['ce_description'].lower()]
-                if bps is None:
-                    unknowns.append(result['ce_description'].lower())
+                try:
+                    bps = body_parts[result['ce_description'].lower()]
+                except KeyError:
+                    unknowns[result['examtype']].add(result['ce_description'])
                     continue
             else:
                 bps = 1
+            if bps is None:
+                pass
             tally[result['examtype']][bps-1] += 1
             match result['examtype']:
                 case 'XR': fee = 35 if bps >= 3 else 20 if bps >= 2 else 12 if bps >= 1 else 0
@@ -155,7 +160,7 @@ async def post_ffs():
             count=len(results),
             tally=tally,
             fee=total_fee,
-            unknowns=unknowns,
+            unknowns=dict(XR=list(unknowns['XR']), CT=list(unknowns['CT'])),
         )
     except ApiError as e:
         return dict(error=e.message), 400

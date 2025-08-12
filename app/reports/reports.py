@@ -55,5 +55,5 @@ where ct_dor between %(date)s + '06:00:00'::time and %(date)s + '23:00:00'::time
     and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
     and ct_staff_serial not in (3725, 8057, 7870, 6692)
     and site.sl_aux1 = 'CDHB'
-    and ce_site NOT IN ('HAN', 'KAIK')
+    and ce_site NOT IN ('HAN', 'KAIK', 'CARD')
 order by st_surname, ct_dor''', dict(date=d, holiday=holiday))
