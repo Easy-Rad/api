@@ -1,7 +1,9 @@
 import atexit
 from os import environ
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tokenise import tokenise_request
+from app import app
 
 pool = ConnectionPool(
     environ['AUTOTRIAGE_CONN'],
@@ -146,3 +148,15 @@ def ffs(results):
         fee=total_fee,
         unknowns=unknowns,
     )
+
+
+@app.get('/desks')
+def get_desks():
+    with pool.connection() as conn:
+        with conn.execute(r"""select ip, name, area, phone from desks""", prepare=True) as cur:
+            cur.row_factory = dict_row
+            result = []
+            for desk in cur.fetchall():
+                desk["ip"] = str(desk["ip"])
+                result.append(desk)
+            return result
