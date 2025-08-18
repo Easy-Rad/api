@@ -10,6 +10,7 @@ app.json.option = None
 import comrad
 import coolify
 import physician_scheduler
+import wally
 
 @app.get('/health')
 def health():

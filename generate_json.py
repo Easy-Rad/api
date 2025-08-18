@@ -45,3 +45,27 @@ with psycopg.connect(environ['AUTOTRIAGE_CONN']) as connection:
         #         name.lower(),
         #         parts,
         #     ) for name, parts in json.load(f).items()])
+        # with open('data/desks.json', 'r') as f:
+        #     cursor.executemany(
+        #         "INSERT INTO desks (ip, name, area, phone) VALUES (%s, %s, %s, %s)",
+        #     [(
+        #         desk['Title'],
+        #         desk['DeskId'],
+        #         desk['DeskName'],
+        #         desk['DeskPhone'],
+        #     ) for desk in json.load(f)])
+        # with open('.vscode/users.json', 'r') as f:
+        #     cursor.executemany(
+        #         "update users set sso = %s where (first_name = %s and last_name = %s)",
+        #     [(
+        #         user['sso'],
+        #         user['first_name'],
+        #         user['last_name'],
+        #     ) for user in json.load(f)])
+        with open('.vscode/terminals.json', 'r') as f:
+            cursor.executemany(
+                "update desks set terminal = %s where computer_name = %s",
+            [(
+                terminal['terminal'],
+                terminal['computer'],
+            ) for terminal in json.load(f)])

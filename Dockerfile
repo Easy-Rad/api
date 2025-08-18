@@ -36,6 +36,7 @@ RUN chown appuser:appuser /app
 # Copy application files
 COPY --chown=appuser:appuser *.py .
 COPY --chown=appuser:appuser data/*.json ./data/
+COPY --chown=appuser:appuser templates/*.html ./templates/
 
 # Switch to non-root user
 USER appuser

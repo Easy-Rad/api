@@ -105,60 +105,6 @@ def get_dashboard(modality: str):
             return cur.fetchall()
 
 
-comrad_sessions = r"""
-with log as (
-select max(sg_serial) as sg_serial
-from syslog
-where sg_error_number = 121
-and sg_datetime > now() at time zone 'Pacific/Auckland' - '3 days'::interval
-group by sg_user, sg_terminal_tcpip
-order by sg_serial desc
-)
-select
-    extract(epoch from sg_datetime at time zone 'Pacific/Auckland')::int as last_login,
-    sg_user::text as user_id,
-    st_firstnames::text as firstname,
-    st_surname::text as surname,
-    -- ad_mobile_no as cell_ph,
-    -- ad_work_no as work_ph,
-    case
-        when st_qualification like 'RA%' then 'Radiologist'
-        when st_qualification = 'FW' then 'Fellow'
-        else 'Registrar'
-    end as role,
-    ad_add3::text as specialty,
-    tl_name::text  terminal,
-    (regexp_match(sg_err_supplement, 'Login from ((?:[0-9]{1,3}\.){3}[0-9]{1,3})'))[1] as ip
-from log
-join syslog using (sg_serial)
-join staff on sg_user = st_user_code
-join address on st_ad_serial = ad_serial
-join terminal on sg_terminal_tcpip = terminal.tl_tcpip
-where sg_err_supplement LIKE 'Login from %'
-and st_status = 'A'
-and st_job_class in ('MC', 'JR')
-and (st_qualification in ('JR', 'SR', 'FW') or st_qualification like 'RA%')
-"""
-
-# fetch("https://cdhbdepartments.cdhb.health.nz/site/Radiology/_api/Web/Lists(guid'5c51d5f9-e243-4766-b665-5a1877400e77')/items?$select=Title,DeskName,DeskId,DeskPhone&$orderby=DeskName,DeskId", {headers: {Accept: "application/json; odata=nometadata"}})
-with open('data/desks.json', 'r') as f:
-    desks = {desk['Title']: dict(
-        id=desk['DeskId'],
-        group=desk['DeskName'],
-        phone=desk['DeskPhone'],
-    ) for desk in json.load(f)}
-
-
-@app.get('/locator')
-def get_locator():
-    result = []
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(comrad_sessions, prepare=True)
-            for row in cur:
-                row['desk'] = desks.get(row['ip'])
-                result.append(row)
-            return result
 
 
 triaged_query = r"""

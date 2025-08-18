@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Wally</title>
+</head>
+<body>
+    <div>Updated: {{ data.updated | format_epoch }}</div>
+    <dl>
+    {% for desk in data.desks %}
+        <dt>{{ desk.name }}</dt>
+        <dd><dl>
+            <dt>Area</dt><dd>{{ desk.area }}</dd>
+            <dt>Phone</dt><dd>{{ desk.phone }}</dd>
+            <dt>IP</dt><dd>{{ desk.ip }}</dd>
+            {% if desk.error %}<dt>Error</dt><dd>{{ desk.error }}</dd>{% endif %}
+            {% if desk.users %}<dt>Users</dt><dd><ul>
+                {% for uid in desk.users %}
+                {% with user=data.users[uid] %}
+                <li><dl>
+                    <dt>Name</dt><dd>{{ user.first_name }} {{ user.last_name }}</dd>
+                    <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
+                    <dt>RIS code</dt><dd>{{ uid }}</dd>
+                    <dt>SSO</dt><dd>{{ user.sso }}</dd>
+                    <dt>Last report</dt><dd>{{ user.last_report | format_epoch }}</dd>
+                    {% if user.ris_logon %}<dt>RIS logon</dt><dd>{{ user.ris_logon | format_epoch }}</dd>{% endif %}
+                    {% if desk.ip in user.windows_logons %}<dt>Windows logon</dt><dd>{{ user.windows_logons[desk.ip] | format_epoch }}</dd>{% endif %}
+                </dl></li>
+                {% endwith %}
+                {% endfor %}
+            </ul></dd>{% endif %}
+        </dl></dd>
+    {% endfor %}
+    </dl>
+</body>
+</html>
