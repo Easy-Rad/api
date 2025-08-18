@@ -5,34 +5,74 @@
 </head>
 <body>
     <div>Updated: {{ data.updated | format_epoch }}</div>
+    {% for title, desks in {"Radiologists":data.radiologist_desks, "Registrars and Fellows":data.reg_fellow_desks}.items() %}
+        <h2>{{ title }} ({{ desks | length }})</h2>
+        <dl>
+        {% for ip, users in desks.items() %}
+            {% with desk=data.desks[ip] %}
+                <dt>{{ desk.name }}</dt>
+                <dd><dl>
+                    <dt>Area</dt><dd>{{ desk.area }}</dd>
+                    <dt>Phone</dt><dd>{{ desk.phone }}</dd>
+                    <dt>Computer</dt><dd>{{ desk.computer_name }}</dd>
+                    <dt>IP</dt><dd>{{ ip }}</dd>
+                    <dt>Users</dt><dd><dl>
+                        {% for uid in users %}
+                            {% with user=data.users[uid] %}
+                            <dt>{{ user.first_name }} {{ user.last_name }}</dt>
+                            <dd><dl>
+                                <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
+                                <dt>RIS code</dt><dd>{{ uid }}</dd>
+                                <dt>SSO</dt><dd>{{ user.sso }}</dd>
+                                <dt>Last report</dt><dd>{% if user.last_report %}{{ user.last_report | format_epoch }}{% else %}N/A{% endif %}</dd>
+                                <dt>Last triage</dt><dd>{% if user.last_triage %}{{ user.last_triage | format_epoch }}{% else %}N/A{% endif %}</dd>
+                                {% if user.ris_logon and ip == user.ris_logon.ip %}
+                                    <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
+                                    <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
+                                {% endif %}
+                                {% if ip in user.windows_logons %}<dt>Windows logon</dt><dd>{{ user.windows_logons[ip] | format_epoch }}</dd>{% endif %}
+                            </dl></dd>
+                            {% endwith %}
+                        {% endfor %}
+                        </dl>
+                    </dd>
+                </dl></dd>
+            {% endwith %}
+        {% endfor %}
+        </dl>
+    {% endfor %}
+    <h2>Offsite users ({{ data.offsite | length }})</h2>
     <dl>
-    {% for desk in data.desks %}
-        <dt>{{ desk.name }}</dt>
+    {% for uid in data.offsite %}
+        {% with user=data.users[uid] %}
+        <dt>{{ user.first_name }} {{ user.last_name }}</dt>
         <dd><dl>
-            <dt>Area</dt><dd>{{ desk.area }}</dd>
-            <dt>Phone</dt><dd>{{ desk.phone }}</dd>
-            <dt>Computer</dt><dd>{{ desk.computer_name }}</dd>
-            <dt>IP</dt><dd>{{ desk.ip }}</dd>
-            {% if desk.error %}<dt>Error</dt><dd>{{ desk.error }}</dd>{% endif %}
-            {% if desk.users %}<dt>Users</dt><dd><ul>
-                {% for uid in desk.users %}
-                {% with user=data.users[uid] %}
-                <li><dl>
-                    <dt>Name</dt><dd>{{ user.first_name }} {{ user.last_name }}</dd>
-                    <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
-                    <dt>RIS code</dt><dd>{{ uid }}</dd>
-                    <dt>SSO</dt><dd>{{ user.sso }}</dd>
-                    <dt>Last report</dt><dd>{{ user.last_report | format_epoch }}</dd>
-                    {% if user.ris_logon and desk.ip == user.ris_logon.ip %}
-                        <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
-                        <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
-                    {% endif %}
-                    {% if desk.ip in user.windows_logons %}<dt>Windows logon</dt><dd>{{ user.windows_logons[desk.ip] | format_epoch }}</dd>{% endif %}
-                </dl></li>
-                {% endwith %}
-                {% endfor %}
-            </ul></dd>{% endif %}
+            <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
+            <dt>RIS code</dt><dd>{{ uid }}</dd>
+            <dt>SSO</dt><dd>{{ user.sso }}</dd>
+            <dt>Last report</dt><dd>{% if user.last_report %}{{ user.last_report | format_epoch }}{% else %}N/A{% endif %}</dd>
+            <dt>Last triage</dt><dd>{% if user.last_triage %}{{ user.last_triage | format_epoch }}{% else %}N/A{% endif %}</dd>
+            {% if user.ris_logon %}
+                <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
+                <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
+            {% endif %}
         </dl></dd>
+        {% endwith %}
+    {% endfor %}
+    </dl>
+    <h2>Available desks ({{ data.empty_desks | length }})</h2>
+    <dl>
+    {% for ip in data.empty_desks %}
+        {% with desk=data.desks[ip] %}
+            <dt>{{ desk.name }}</dt>
+            <dd><dl>
+                <dt>Area</dt><dd>{{ desk.area }}</dd>
+                <dt>Phone</dt><dd>{{ desk.phone }}</dd>
+                <dt>Computer</dt><dd>{{ desk.computer_name }}</dd>
+                <dt>IP</dt><dd>{{ ip }}</dd>
+                <dt>Status</dt><dd>{% if desk.online %}On{% else %}Off{% endif %}</dd>
+            </dl></dd>
+        {% endwith %}
     {% endfor %}
     </dl>
 </body>

@@ -32,7 +32,17 @@ select ris,
         where ct_staff_serial = st_serial
           and ct_key_type = 'R'
         order by ct_dor desc
-        limit 1) as last_report
+        limit 1) as last_report,
+       (select extract(epoch from rfe_dor at time zone 'Pacific/Auckland')::int
+        from case_referral_exam
+        where rfe_staff = st_serial
+          and rfe_serial > (select rfe_serial
+                             from case_referral_exam
+                             where rfe_dor <= now() at time zone 'Pacific/Auckland' - '24 hours'::interval
+                             order by rfe_serial desc
+                             limit 1)
+        order by rfe_serial desc
+        limit 1) as last_triage
 from ris_users
          full join windows_users using (ris)
          join staff on ris = st_user_code
@@ -46,6 +56,7 @@ def locator_ris(windows_users:list[str]):
             cur.execute(locator_data, [windows_users], prepare=True)
             return {user["ris"]:dict(
                 last_report=user["last_report"],
+                last_triage=user["last_triage"],
                 ris_logon=dict(
                     ip=user["ris_ip"],
                     terminal=user["ris_terminal"],
@@ -58,33 +69,45 @@ def wally_data():
     file_path = 'locator/locator.json'
     updated = int(path.getmtime(file_path))
     with open(file_path, 'r') as f:
-        desks = json.load(f)
+        desks = {desk["ip"]:desk for desk in json.load(f)}
     with coolify_pool.connection() as conn:
         conn.row_factory=dict_row
-        with conn.execute(r"""select ris from users where sso ilike any(%s)""", [[user["username"] for desk in desks for user in desk["users"]]], prepare=True) as cur:
+        with conn.execute(r"""select ris from users where sso ilike any(%s)""", [[user["username"] for desk in desks.values() for user in desk["users"]]], prepare=True) as cur:
             ris_data = locator_ris([user["ris"] for user in cur.fetchall()])
         with conn.execute(r"""select * from users where ris = any(%s)""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
-            user_data = dict()
-            for user in cur.fetchall():
-                ris_logon = ris_data[user["ris"]]["ris_logon"]
-                if ris_logon and next((desk for desk in desks if desk["online"] and desk["ip"]==ris_logon["ip"]), None) is None:
-                    ris_data[user["ris"]]["ris_logon"] = None
-                user |= ris_data[user["ris"]]
-                user["windows_logons"]=dict()
-                user_data[user.pop("ris")]=user
-    for desk in desks:
-        newUsers = set()
-        for user in desk["users"]:
-            uid = next((uid for uid, data in user_data.items() if data["sso"].lower() == user["username"].lower()), None)
-            if uid is not None:
-                user_data[uid]["windows_logons"][desk["ip"]]=user["logon"]
-                newUsers.add(uid)
-        newUsers.update((uid for uid, data in user_data.items() if (ris_logon := data["ris_logon"]) and ris_logon["ip"]==desk["ip"]))
-        desk["users"] = list(newUsers)
+            users = {user["ris"]:user|ris_data[user["ris"]]|dict(windows_logons=dict()) for user in cur.fetchall()}
+    sso_map = {user["sso"].lower(): uid for uid, user in users.items()}
+    radiologist_desks = {}
+    reg_fellow_desks = {}
+    empty_desks = []
+    for ip, desk in desks.items():
+        del desk["ip"]
+        empty = True
+        for user_entry in desk["users"]:
+            if (sso:= user_entry["username"].lower()) in sso_map:
+                uid = sso_map[sso]
+                deskmap = radiologist_desks if users[uid]["radiologist"] else reg_fellow_desks
+                if ip not in deskmap:
+                    deskmap[ip] = set()
+                deskmap[ip].add(uid)
+                users[uid]["windows_logons"][ip]=user_entry["logon"]
+                empty = False
+        del desk["users"]
+        if empty:
+            empty_desks.append(ip)
+    offsite = []
+    for uid, user in users.items():
+        del user["ris"]
+        if len(user["windows_logons"]) == 0 and (user["ris_logon"] is None or user["ris_logon"]["ip"] not in desks):
+            offsite.append(uid)
     return dict(
-        updated=updated,
+        radiologist_desks={ip: list(uids) for ip, uids in radiologist_desks.items()},
+        reg_fellow_desks={ip: list(uids) for ip, uids in reg_fellow_desks.items()},
+        empty_desks=empty_desks,
+        offsite=offsite,
+        users=users,
         desks=desks,
-        users=user_data,
+        updated=updated,
     )
 
 tz=ZoneInfo("Pacific/Auckland")
