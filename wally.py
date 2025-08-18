@@ -41,11 +41,17 @@ where st_status = 'A'
 """
 
 def locator_ris(windows_users:list[str]):
-    # result = []
     with comrad_pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(locator_data, [windows_users], prepare=True)
-            return {user["ris"]:user for user in cur.fetchall()}
+            return {user["ris"]:dict(
+                last_report=user["last_report"],
+                ris_logon=dict(
+                    ip=user["ris_ip"],
+                    terminal=user["ris_terminal"],
+                    timestamp=user["ris_logon"],
+                ) if user["ris_ip"] else None,
+            ) for user in cur.fetchall()}
 
 @app.get('/wally_data')
 def wally_data():
@@ -60,6 +66,9 @@ def wally_data():
         with conn.execute(r"""select * from users where ris = any(%s)""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
             user_data = dict()
             for user in cur.fetchall():
+                ris_logon = ris_data[user["ris"]]["ris_logon"]
+                if ris_logon and next((desk for desk in desks if desk["online"] and desk["ip"]==ris_logon["ip"]), None) is None:
+                    ris_data[user["ris"]]["ris_logon"] = None
                 user |= ris_data[user["ris"]]
                 user["windows_logons"]=dict()
                 user_data[user.pop("ris")]=user
@@ -70,7 +79,7 @@ def wally_data():
             if uid is not None:
                 user_data[uid]["windows_logons"][desk["ip"]]=user["logon"]
                 newUsers.add(uid)
-        newUsers.update((uid for uid, data in user_data.items() if data["ris_ip"]==desk["ip"]))
+        newUsers.update((uid for uid, data in user_data.items() if (ris_logon := data["ris_logon"]) and ris_logon["ip"]==desk["ip"]))
         desk["users"] = list(newUsers)
     return dict(
         updated=updated,

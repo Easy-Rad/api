@@ -23,7 +23,10 @@
                     <dt>RIS code</dt><dd>{{ uid }}</dd>
                     <dt>SSO</dt><dd>{{ user.sso }}</dd>
                     <dt>Last report</dt><dd>{{ user.last_report | format_epoch }}</dd>
-                    {% if user.ris_logon %}<dt>RIS logon</dt><dd>{{ user.ris_logon | format_epoch }}</dd>{% endif %}
+                    {% if user.ris_logon and desk.ip == user.ris_logon.ip %}
+                        <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
+                        <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
+                    {% endif %}
                     {% if desk.ip in user.windows_logons %}<dt>Windows logon</dt><dd>{{ user.windows_logons[desk.ip] | format_epoch }}</dd>{% endif %}
                 </dl></li>
                 {% endwith %}
