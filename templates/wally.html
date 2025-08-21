@@ -2,10 +2,68 @@
 <html lang="en">
 <head>
     <title>Wally</title>
+    <style>
+        table, th, td {
+            border: 1px solid black; /* Sets a 1px solid black border */
+            padding: 4px 8px;
+        }
+
+        table {
+            border-collapse: collapse; /* Collapses adjacent cell borders into a single border */
+        }
+    </style>
+
 </head>
 <body>
     <div>Updated: {{ data.updated | format_epoch }}</div>
     {% for title, desks in {"Radiologists":data.radiologist_desks, "Registrars and Fellows":data.reg_fellow_desks}.items() %}
+        <h4>{{ title }} ({{ desks | length }})</h4>
+        <table>
+            <thead>
+                <tr>
+                    <!-- <th class="grouptitle">Registrars and Fellows</th> -->
+                    <th></th>
+
+                    <th class="locationdesk"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/computer.jpg"></th>
+                    <th class="locationtitle"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/telephone.jpg"></th>
+                    <th class="clear-right"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/clock.jpg"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for ip, users in desks.items() %}
+                {% with desk=data.desks[ip] %}
+                    {% for uid in users %}
+                        {% with user=data.users[uid] %}
+                        <tr>
+                            <td>
+                                <div>{{ user.first_name }} {{ user.last_name }}</div>
+                                <div>{{ user.specialty }}</div>
+                            </td>
+                            <td>
+                                <div>{{ desk.name }}</div>
+                                <div>{{ desk.area }}</div>
+                            </td>
+                            <td>
+                                {{ desk.phone }}
+                            </td>
+                            <td>
+                                {% if user.last_report is none and user.last_triage is none %}
+                                N/A
+                                {% elif user.last_triage is not none and (user.last_report is none or user.last_report < user.last_triage) %}
+                                Last triage: <span>{{ user.last_triage | format_epoch }}</span>
+                                {% else %}
+                                Last report: <span>{{ user.last_report | format_epoch }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                    {% endfor %}
+                {% endwith %}
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {#
         <h2>{{ title }} ({{ desks | length }})</h2>
         <dl>
         {% for ip, users in desks.items() %}
@@ -40,7 +98,9 @@
             {% endwith %}
         {% endfor %}
         </dl>
+        #}
     {% endfor %}
+    {% if data.offsite | length %}
     <h2>Offsite users ({{ data.offsite | length }})</h2>
     <dl>
     {% for uid in data.offsite %}
@@ -60,7 +120,20 @@
         {% endwith %}
     {% endfor %}
     </dl>
-    <h2>Available desks ({{ data.empty_desks | length }})</h2>
+    {% endif %}
+    <h4>Available desks ({{ data.empty_desks | length }})</h4>
+    <table><tbody>
+        {% for ip in data.empty_desks %}
+        {% with desk=data.desks[ip] %}
+        <tr>
+            <td>{{ desk.name }}</td>
+            <td>{{ desk.area }}</td>
+            <td>{% if desk.online %}On{% else %}Off{% endif %}</td>
+        </tr>
+        {% endwith %}
+    {% endfor %}
+    </tbody></table>
+    {#
     <dl>
     {% for ip in data.empty_desks %}
         {% with desk=data.desks[ip] %}
@@ -75,5 +148,6 @@
         {% endwith %}
     {% endfor %}
     </dl>
+     #}
 </body>
 </html>

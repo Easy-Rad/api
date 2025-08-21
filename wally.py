@@ -74,7 +74,7 @@ def wally_data():
         conn.row_factory=dict_row
         with conn.execute(r"""select ris from users where sso ilike any(%s)""", [[user["username"] for desk in desks.values() for user in desk["users"]]], prepare=True) as cur:
             ris_data = locator_ris([user["ris"] for user in cur.fetchall()])
-        with conn.execute(r"""select * from users where ris = any(%s)""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
+        with conn.execute(r"""select * from users where show_in_locator and ris = any(%s)""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
             users = {user["ris"]:user|ris_data[user["ris"]]|dict(windows_logons=dict()) for user in cur.fetchall()}
     sso_map = {user["sso"].lower(): uid for uid, user in users.items()}
     radiologist_desks = {}
