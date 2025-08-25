@@ -4,150 +4,82 @@
     <title>Wally</title>
     <style>
         table, th, td {
-            border: 1px solid black; /* Sets a 1px solid black border */
+            border: 1px solid black;
             padding: 4px 8px;
         }
-
         table {
-            border-collapse: collapse; /* Collapses adjacent cell borders into a single border */
+            border-collapse: collapse;
         }
     </style>
-
 </head>
 <body>
     <div>Updated: {{ data.updated | format_epoch }}</div>
     {% for title, desks in {"Radiologists":data.radiologist_desks, "Registrars and Fellows":data.reg_fellow_desks}.items() %}
-        <h4>{{ title }} ({{ desks | length }})</h4>
-        <table>
-            <thead>
-                <tr>
-                    <!-- <th class="grouptitle">Registrars and Fellows</th> -->
-                    <th></th>
-
-                    <th class="locationdesk"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/computer.jpg"></th>
-                    <th class="locationtitle"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/telephone.jpg"></th>
-                    <th class="clear-right"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/clock.jpg"></th>
-                </tr>
-            </thead>
-            <tbody>
+    <h4>{{ title }}</h4>
+    <table>
+        <thead>
+            <tr>
+                <th></th>
+                <th class="locationdesk"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/computer.jpg"></th>
+                <th class="locationtitle"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/telephone.jpg"></th>
+                <th class="clear-right"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/clock.jpg"></th>
+            </tr>
+        </thead>
+        <tbody>
             {% for ip, users in desks.items() %}
-                {% with desk=data.desks[ip] %}
-                    {% for uid in users %}
-                        {% with user=data.users[uid] %}
-                        <tr>
-                            <td>
-                                <div>{{ user.first_name }} {{ user.last_name }}</div>
-                                <div>{{ user.specialty }}</div>
-                            </td>
-                            <td>
-                                <div>{{ desk.name }}</div>
-                                <div>{{ desk.area }}</div>
-                            </td>
-                            <td>
-                                {{ desk.phone }}
-                            </td>
-                            <td>
-                                {% if user.last_report is none and user.last_triage is none %}
-                                N/A
-                                {% elif user.last_triage is not none and (user.last_report is none or user.last_report < user.last_triage) %}
-                                Last triage: <span>{{ user.last_triage | format_epoch }}</span>
-                                {% else %}
-                                Last report: <span>{{ user.last_report | format_epoch }}</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endwith %}
-                    {% endfor %}
-                {% endwith %}
-            {% endfor %}
-            </tbody>
-        </table>
-
-        {#
-        <h2>{{ title }} ({{ desks | length }})</h2>
-        <dl>
-        {% for ip, users in desks.items() %}
             {% with desk=data.desks[ip] %}
-                <dt>{{ desk.name }}</dt>
-                <dd><dl>
-                    <dt>Area</dt><dd>{{ desk.area }}</dd>
-                    <dt>Phone</dt><dd>{{ desk.phone }}</dd>
-                    <dt>Computer</dt><dd>{{ desk.computer_name }}</dd>
-                    <dt>IP</dt><dd>{{ ip }}</dd>
-                    <dt>Users</dt><dd><dl>
-                        {% for uid in users %}
-                            {% with user=data.users[uid] %}
-                            <dt>{{ user.first_name }} {{ user.last_name }}</dt>
-                            <dd><dl>
-                                <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
-                                <dt>RIS code</dt><dd>{{ uid }}</dd>
-                                <dt>SSO</dt><dd>{{ user.sso }}</dd>
-                                <dt>Last report</dt><dd>{% if user.last_report %}{{ user.last_report | format_epoch }}{% else %}N/A{% endif %}</dd>
-                                <dt>Last triage</dt><dd>{% if user.last_triage %}{{ user.last_triage | format_epoch }}{% else %}N/A{% endif %}</dd>
-                                {% if user.ris_logon and ip == user.ris_logon.ip %}
-                                    <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
-                                    <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
-                                {% endif %}
-                                {% if ip in user.windows_logons %}<dt>Windows logon</dt><dd>{{ user.windows_logons[ip] | format_epoch }}</dd>{% endif %}
-                            </dl></dd>
-                            {% endwith %}
-                        {% endfor %}
-                        </dl>
-                    </dd>
-                </dl></dd>
+            {% for uid in users %}
+            {% with user=data.users[uid] %}
+            <tr>
+                <td>
+                    <div>{{ user.first_name }} {{ user.last_name }}</div>
+                    <div>{{ user.specialty }}</div>
+                </td>
+                <td>
+                    <div>{{ desk.name }}</div>
+                    <div>{{ desk.area }}</div>
+                </td>
+                <td>
+                    {{ desk.phone }}
+                </td>
+                <td>
+                    {{ user | last_status }}
+                </td>
+            </tr>
             {% endwith %}
-        {% endfor %}
-        </dl>
-        #}
-    {% endfor %}
-    {% if data.offsite | length %}
-    <h2>Offsite users ({{ data.offsite | length }})</h2>
-    <dl>
-    {% for uid in data.offsite %}
-        {% with user=data.users[uid] %}
-        <dt>{{ user.first_name }} {{ user.last_name }}</dt>
-        <dd><dl>
-            <dt>Specialty</dt><dd>{{ user.specialty }}</dd>
-            <dt>RIS code</dt><dd>{{ uid }}</dd>
-            <dt>SSO</dt><dd>{{ user.sso }}</dd>
-            <dt>Last report</dt><dd>{% if user.last_report %}{{ user.last_report | format_epoch }}{% else %}N/A{% endif %}</dd>
-            <dt>Last triage</dt><dd>{% if user.last_triage %}{{ user.last_triage | format_epoch }}{% else %}N/A{% endif %}</dd>
-            {% if user.ris_logon %}
-                <dt>RIS logon</dt><dd>{{ user.ris_logon.timestamp | format_epoch }}</dd>
-                <dt>RIS terminal</dt><dd>{{ user.ris_logon.terminal }}</dd>
+            {% endfor %}
+            {% endwith %}
+            {% endfor %}
+            {% for uid in data.offsite %}
+            {% with user=data.users[uid] %}
+            {% if (user.specialty == "Radiologist") == (title == "Radiologists") %}
+            <tr>
+                <td>
+                    <div>{{ user.first_name }} {{ user.last_name }}</div>
+                    <div>{{ user.specialty }}</div>
+                </td>
+                <td>Offsite</td>
+                <td></td>
+                <td>
+                    {{ user | last_status }}
+                </td>
+            </tr>
             {% endif %}
-        </dl></dd>
-        {% endwith %}
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
     {% endfor %}
-    </dl>
-    {% endif %}
     <h4>Available desks ({{ data.empty_desks | length }})</h4>
     <table><tbody>
         {% for ip in data.empty_desks %}
         {% with desk=data.desks[ip] %}
         <tr>
             <td>{{ desk.name }}</td>
-            <td>{{ desk.area }}</td>
-            <td>{% if desk.online %}On{% else %}Off{% endif %}</td>
+            <td>{% if desk.online %}⬛{% else %}⬜{% endif %}</td>
         </tr>
         {% endwith %}
-    {% endfor %}
+        {% endfor %}
     </tbody></table>
-    {#
-    <dl>
-    {% for ip in data.empty_desks %}
-        {% with desk=data.desks[ip] %}
-            <dt>{{ desk.name }}</dt>
-            <dd><dl>
-                <dt>Area</dt><dd>{{ desk.area }}</dd>
-                <dt>Phone</dt><dd>{{ desk.phone }}</dd>
-                <dt>Computer</dt><dd>{{ desk.computer_name }}</dd>
-                <dt>IP</dt><dd>{{ ip }}</dd>
-                <dt>Status</dt><dd>{% if desk.online %}On{% else %}Off{% endif %}</dd>
-            </dl></dd>
-        {% endwith %}
-    {% endfor %}
-    </dl>
-     #}
 </body>
 </html>

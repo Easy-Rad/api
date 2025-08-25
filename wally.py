@@ -115,7 +115,34 @@ tz=ZoneInfo("Pacific/Auckland")
 def format_epoch(timestamp, format_string="%d/%m/%Y %H:%M:%S %p"):
     return datetime.fromtimestamp(timestamp, tz).strftime(format_string)
 
+def last_status(user):
+    result, timestamp = None, 0
+    
+    for test in ('last_report', 'last_triage'):
+        if user[test] is not None and user[test] > timestamp:
+            result, timestamp = test, user[test]
+    if user['ris_logon'] is not None and user['ris_logon']['timestamp'] > timestamp:
+        result, timestamp = 'ris_logon', user['ris_logon']['timestamp']
+    for w in user['windows_logons'].values():
+        if w > timestamp:
+            result, timestamp = 'windows_logon', w
+    match result:
+        case 'last_report':
+            return f'Report: {format_epoch(timestamp)}'
+        case 'last_triage':
+            return f'Triage: {format_epoch(timestamp)}'
+        case 'ris_logon':
+            return f'RIS logon: {format_epoch(timestamp)}'
+        case 'windows_logon':
+            return f'Windows logon: {format_epoch(timestamp)}'
+        case _:
+            return ''
+
+    # return result, timestamp
+
+
 app.jinja_env.filters['format_epoch'] = format_epoch
+app.jinja_env.filters['last_status'] = last_status
 
 @app.get('/wally')
 def wally():

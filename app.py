@@ -7,6 +7,8 @@ from flask_orjson import OrjsonProvider
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)-8s %(message)s')
 
 app = Flask(__name__)
+app.jinja_env.trim_blocks = True
+app.jinja_env.lstrip_blocks = True
 app.json = OrjsonProvider(app)
 app.json.option = None
 
