@@ -90,23 +90,18 @@ class XMPP(slixmpp.ClientXMPP):
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("roster_update", self.handle_roster_update)
         self.add_event_handler("changed_status", self.handle_changed_status)
-        self.add_event_handler("presence_unsubscribed", self.handle_presence_unsubscribed)
 
     async def start(self, event):
         await self.get_roster()
         self.send_presence()
 
-    def handle_presence_unsubscribed(self, presence):
-        logging.info(f"Received presence_unsubscribed: {presence}")
-
     def handle_changed_status(self, presence):
         jid:str = presence['from'].bare
         new_presence = presence_from_dict(self.client_roster.presence(jid))
-        logging.info(f"Received presence for {jid}: {new_presence}")
         with self.users_lock:
             if jid in self.users:
                 user = self.users[jid]
-                logging.info(f"Updating presence for {jid}: {user.presence} -> {new_presence}")
+                logging.info(f"{user.full_name}: {user.presence} -> {new_presence}")
                 user.presence = new_presence
 
     async def handle_roster_update(self, iq):
