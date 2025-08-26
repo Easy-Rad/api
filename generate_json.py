@@ -62,10 +62,17 @@ with psycopg.connect(environ['AUTOTRIAGE_CONN']) as connection:
         #         user['first_name'],
         #         user['last_name'],
         #     ) for user in json.load(f)])
-        with open('.vscode/terminals.json', 'r') as f:
+        # with open('.vscode/terminals.json', 'r') as f:
+        #     cursor.executemany(
+        #         "update desks set terminal = %s where computer_name = %s",
+        #     [(
+        #         terminal['terminal'],
+        #         terminal['computer'],
+        #     ) for terminal in json.load(f)])
+        with open('.vscode/xmpp_users.json', 'r') as f:
             cursor.executemany(
-                "update desks set terminal = %s where computer_name = %s",
-            [(
-                terminal['terminal'],
-                terminal['computer'],
-            ) for terminal in json.load(f)])
+                "update users set xmpp_jid = %s where first_name = %s and last_name = %s",
+            [(  jid,
+                user['first_name'],
+                user['last_name'],
+            ) for jid, user in json.load(f).items()])

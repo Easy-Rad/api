@@ -105,7 +105,12 @@ class XMPP(slixmpp.ClientXMPP):
                 user.presence = new_presence
 
     async def handle_roster_update(self, iq):
-        valid_jids = [jid.bare for jid in iq['roster']['items'] if "Radiologist - CDHB" in iq['roster']['items'][jid]['groups'] or "Registrar Rad - CDHB" in iq['roster']['items'][jid]['groups']]
+        valid_jids = [jid.bare for jid in iq['roster']['items'] if "Radiologist - CDHB" in iq['roster']['items'][jid]['groups'] or "Registrar Rad - CDHB" in iq['roster']['items'][jid]['groups'] or jid.bare in (
+            # jid whitelist
+            'lberry@cdhb',
+            'dholnn@cdhb',
+            'teaenn@cdhb',
+        )]
         if len(valid_jids) == 0: return
         new_query = self.make_iq_get()
         query = ET.Element('{jabber:iq:roster-dynamic}query')
