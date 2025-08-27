@@ -90,6 +90,7 @@ class XMPP(slixmpp.ClientXMPP):
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("roster_update", self.handle_roster_update)
         self.add_event_handler("changed_status", self.handle_changed_status)
+        self.add_event_handler("message", self.message_received)
 
     async def start(self, event):
         await self.get_roster()
@@ -141,6 +142,14 @@ class XMPP(slixmpp.ClientXMPP):
                     presence_from_dict(self.client_roster.presence(jid)),
                 )
                 self.users[jid] = user
+
+    def message_received(self, msg):
+        if msg['type'] == 'chat':
+            payload = msg.xml.find('{com.intelerad.viewer.im.extensions.orderContainer2}orderContainer') or msg.xml.find('{com.intelerad.viewer.im.extensions.orderContainer}orderContainer') or msg.xml.find('{com.intelerad.viewer.im.extensions.phoneRequestAction}phoneRequestAction')
+            reply = msg.reply(msg['body'] if payload else f'{msg['body']} yourself!')
+            reply['to']=reply['to'].bare
+            if payload is not None: reply.set_payload(payload)
+            reply.send()
 
 xmpp_client = XMPP(JID, PASSWORD)
 
