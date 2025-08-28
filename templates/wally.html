@@ -52,7 +52,7 @@
             {% endfor %}
             {% for uid in data.offsite %}
             {% with user=data.users[uid] %}
-            {% if (user.specialty == "Radiologist") == (title == "Radiologists") %}
+            {% if user.radiologist == (title == "Radiologists") %}
             <tr>
                 <td>
                     <div>{{ user.first_name }} {{ user.last_name }}</div>
