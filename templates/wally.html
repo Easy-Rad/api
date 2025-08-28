@@ -1,85 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Wally</title>
-    <style>
-        table, th, td {
-            border: 1px solid black;
-            padding: 4px 8px;
-        }
-        table {
-            border-collapse: collapse;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+    <script src="https://kit.fontawesome.com/9064a734eb.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6/dist/htmx.min.js" integrity="sha384-Akqfrbj/HpNVo8k11SXBb6TlBWmXXlYQrCSqEWmyKJe+hDm3Z/B2WVG4smwBkRVm" crossorigin="anonymous"></script>
 </head>
-<body>
-    <div>Updated: {{ data.updated | format_epoch }}</div>
-    {% for title, desks in {"Radiologists":data.radiologist_desks, "Registrars and Fellows":data.reg_fellow_desks}.items() %}
-    <h4>{{ title }}</h4>
-    <table>
-        <thead>
-            <tr>
-                <th></th>
-                <th class="locationdesk"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/computer.jpg"></th>
-                <th class="locationtitle"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/telephone.jpg"></th>
-                <th class="clear-right"><img width="32" height="32" src="https://cdhbdepartments.cdhb.health.nz/site/radiology/siteassets/clock.jpg"></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for ip, users in desks.items() %}
-            {% with desk=data.desks[ip] %}
-            {% for uid in users %}
-            {% with user=data.users[uid] %}
-            <tr>
-                <td>
-                    <div>{{ user.first_name }} {{ user.last_name }}</div>
-                    <div>{{ user.specialty }}</div>
-                </td>
-                <td>
-                    <div>{{ desk.name }}</div>
-                    <div>{{ desk.area }}</div>
-                </td>
-                <td>
-                    {{ desk.phone }}
-                </td>
-                <td>
-                    {{ user | last_status }}
-                </td>
-            </tr>
-            {% endwith %}
-            {% endfor %}
-            {% endwith %}
-            {% endfor %}
-            {% for uid in data.offsite %}
-            {% with user=data.users[uid] %}
-            {% if user.radiologist == (title == "Radiologists") %}
-            <tr>
-                <td>
-                    <div>{{ user.first_name }} {{ user.last_name }}</div>
-                    <div>{{ user.specialty }}</div>
-                </td>
-                <td>Offsite</td>
-                <td></td>
-                <td>
-                    {{ user | last_status }}
-                </td>
-            </tr>
-            {% endif %}
-            {% endwith %}
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endfor %}
-    <h4>Available desks ({{ data.empty_desks | length }})</h4>
-    <table><tbody>
-        {% for ip in data.empty_desks %}
-        {% with desk=data.desks[ip] %}
-        <tr>
-            <td>{{ desk.name }}</td>
-            <td>{% if desk.online %}⬛{% else %}⬜{% endif %}</td>
-        </tr>
-        {% endwith %}
-        {% endfor %}
-    </tbody></table>
-</body>
-</html>
+<body class="p-2"><div hx-get="/locator-data" hx-trigger="load, every 300s"></div></body>

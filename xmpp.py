@@ -22,7 +22,7 @@ class Presence(enum.StrEnum):
     BUSY = "busy"
     OFFLINE = "offline"
 
-def presence_from_dict(d: dict) -> Presence:
+def presence_from_dict(d: dict[str, dict]) -> Presence:
 
     try:
         presence = next(iter(d.values()))
@@ -41,43 +41,19 @@ def presence_from_dict(d: dict) -> Presence:
 def generate_jid(pacs: str):
     return re.sub(r'([A-Z])', lambda m: '|' + m.group(1).lower(), pacs) + '@cdhb'
 
+def generate_pacs(jid: str):
+    return re.sub(r'\|([a-z])', lambda m: m.group(1).upper(), jid.split('@')[0])
+
 @dataclass
 class User:
-    phone: str
-    email: str
-    department: str
-    first_name: str
-    last_name: str
-    full_name: str
-    title: str
-    primary_role_name: str
-    job_function: str
-    specialties: list[str]
-    session_location: str
-    session_phone: str
-    address: str
+    name: str
     presence: Presence
 
     def toJSON(self):
         return dict(
-            phone=self.phone,
-            email=self.email,
-            department=self.department,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            full_name=self.full_name,
-            title=self.title,
-            primary_role_name=self.primary_role_name,
-            job_function=self.job_function,
-            specialties=self.specialties,
-            session_location=self.session_location,
-            session_phone=self.session_phone,
-            address=self.address,
+            name=self.name,
             presence=self.presence.value,
         )
-
-    def __str__(self):
-        return f"User(phone={self.phone}, email={self.email}, department={self.department}, first_name={self.first_name}, last_name={self.last_name}, full_name={self.full_name}, title={self.title}, primary_role_name={self.primary_role_name}, job_function={self.job_function}, specialties={self.specialties}, session_location={self.session_location}, session_phone={self.session_phone}, presence={self.presence})"
 
 class XMPP(slixmpp.ClientXMPP):
 
@@ -98,18 +74,21 @@ class XMPP(slixmpp.ClientXMPP):
         self.add_event_handler("changed_status", self.handle_changed_status)
         self.add_event_handler("message", self.message_received)
 
+
     async def start(self, event):
         await self.get_roster()
         self.send_presence()
 
     def handle_changed_status(self, presence):
         jid:str = presence['from'].bare
-        new_presence = presence_from_dict(self.client_roster.presence(jid))
+        pacs = generate_pacs(jid)
         with self.users_lock:
-            if jid in self.users:
-                user = self.users[jid]
-                logging.info(f"{user.full_name}: {user.presence} -> {new_presence}")
-                user.presence = new_presence
+            if pacs in self.users:
+                user = self.users[pacs]
+                new_presence = presence_from_dict(self.client_roster.presence(jid))
+                if user.presence != new_presence:
+                    logging.info(f"{user.name}: {user.presence} -> {new_presence}")
+                    user.presence = new_presence
 
     async def handle_roster_update(self, iq):
         valid_jids = [jid.bare for jid in iq['roster']['items'] if jid.bare in self.jids]
@@ -127,22 +106,10 @@ class XMPP(slixmpp.ClientXMPP):
             for person in people.xml.iterfind(".//{jabber:iq:roster-dynamic}item[@jid]"):
                 jid = person.attrib['jid']
                 user = User(
-                    person.findtext("{jabber:iq:roster-dynamic}phone1"),
-                    person.findtext("{jabber:iq:roster-dynamic}email"),
-                    person.findtext("{jabber:iq:roster-dynamic}department"),
-                    person.findtext("{jabber:iq:roster-dynamic}first-name"),
-                    person.findtext("{jabber:iq:roster-dynamic}last-name"),
                     person.findtext("{jabber:iq:roster-dynamic}full-name"),
-                    person.findtext("{jabber:iq:roster-dynamic}title"),
-                    person.findtext("{jabber:iq:roster-dynamic}primary-role-name"),
-                    person.findtext("{jabber:iq:roster-dynamic}job-function"),
-                    [n.text for n in person.iterfind(".//{jabber:iq:roster-dynamic}specialty")],
-                    person.findtext("{jabber:iq:roster-dynamic}session-physical-location"),
-                    person.findtext("{jabber:iq:roster-dynamic}session-phone"),
-                    person.findtext("{jabber:iq:roster-dynamic}address"),
                     presence_from_dict(self.client_roster.presence(jid)),
                 )
-                self.users[jid] = user
+                self.users[generate_pacs(jid)] = user
 
     def message_received(self, msg):
         if msg['type'] == 'chat':
@@ -152,6 +119,10 @@ class XMPP(slixmpp.ClientXMPP):
             if payload is not None: reply.set_payload(payload)
             reply.send()
 
+    def reconnect(self, wait: int | float = 2, reason: str = "Reconnecting") -> None:
+        logging.info('Scheduled reconnect...')
+        super().reconnect(wait, reason)
+
 with pool.connection() as conn:
     with conn.execute("select pacs from users") as cur:
         jids = set(generate_jid(pacs) for (pacs,) in cur.fetchall())
@@ -160,15 +131,17 @@ xmpp_client = XMPP(JID, PASSWORD, jids)
 
 @app.get('/xmpp/online')
 def get_online():
-    return {jid: user.toJSON() for jid, user in xmpp_client.users.items() if user.presence != Presence.OFFLINE}
+    return {pacs: user.toJSON() for pacs, user in xmpp_client.users.items() if user.presence != Presence.OFFLINE}
 
 @app.get('/xmpp/all')
 def get_all():
-    return {jid: user.toJSON() for jid, user in xmpp_client.users.items()}
+    return {pacs: user.toJSON() for pacs, user in xmpp_client.users.items()}
 
 def run_xmpp_client(client: XMPP):
     if client.connect(SERVER, SERVER_PORT):
+        client.schedule("Daily reconnect", 60*60*24, client.reconnect, repeat=True)
         asyncio.get_event_loop().run_forever()
+
     else:
         logging.error("Unable to connect to the XMPP server.")
 
