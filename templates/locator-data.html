@@ -1,21 +1,29 @@
-<div class="is-pulled-right">Updated: {{ data.updated | format_epoch }}</div>
+<div class="columns">
 {% for title in ("Radiologists", "Registrars and Fellows") %}
-    <h5 class="subtitle">{{ title }}</h5>
-    <div class="fixed-grid has-3-cols">
-        <div class="grid is-gap-1">
+<div class="column is-half">
+        <table class="table is-striped is-fullwidth is-narrow">
+            <thead>
+                <tr><th colspan="5">{{ title }}</th></tr>
+                <tr>
+                    <th>Name</th>
+                    <th>Specialty</th>
+                    <th>Location</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
             {% for ip, desk in data.desks.items() %}
             {% for uid in desk.users %}
             {% with user=data.users[uid] %}
             {% if user.pacs_presence != 'offline' and user.radiologist == (title == "Radiologists") %}
-            <div class="cell">
-                <div class="box p-2">
-                    <span class="icon-text"><span class="icon has-text-{{ user.pacs_presence | presence_icon_class }}"><i class="fa-solid fa-{{ user.pacs_presence | presence_icon }}"></i></span><span>{{ user.first_name }} {{ user.last_name }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-briefcase-medical"></i></span><span>{{ user.specialty }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-desktop"></i></span><span>{{ desk.name }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-phone"></i></span><span>{{ desk.phone }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-clock"></i></span><span>{{ user | last_status }}</span></span>
-                </div>
-            </div>
+                <tr>
+                    <td>{{ user.first_name }} {{ user.last_name }}</td>
+                    <td>{{ user.specialty }}</td>
+                    <td>{{ desk.name }}</td>
+                    <td>{% if desk.phone %}{{ desk.phone }}{% endif %}</td>
+                    <td><span class="icon-text"><span class="icon has-text-{{ user.pacs_presence | presence_icon_class }}"><i class="fa-solid fa-{{ user.pacs_presence | presence_icon }}"></i></span><span>{{ user | last_status }}</span></span></td>
+                </tr>
             {% endif %}
             {% endwith %}
             {% endfor %}
@@ -23,30 +31,34 @@
             {% for uid in data.offsite %}
             {% with user=data.users[uid] %}
             {% if user.pacs_presence != 'offline' and user.radiologist == (title == "Radiologists") %}
-            <div class="cell">
-                <div class="box p-2">
-                    <span class="icon-text"><span class="icon has-text-{{ user.pacs_presence | presence_icon_class }}"><i class="fa-solid fa-{{ user.pacs_presence | presence_icon }}"></i></span><span>{{ user.first_name }} {{ user.last_name }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-briefcase-medical"></i></span><span>{{ user.specialty }}</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-globe"></i></span><span>Offsite</span></span>
-                    <span class="icon-text"><span class="icon"><i class="fa-solid fa-clock"></i></span><span>{{ user | last_status }}</span></span>
-                </div>
-            </div>
+                <tr>
+                    <td>{{ user.first_name }} {{ user.last_name }}</td>
+                    <td>{{ user.specialty }}</td>
+                    <td>Offsite</td>
+                    <td></td>
+                    <td><span class="icon-text"><span class="icon has-text-{{ user.pacs_presence | presence_icon_class }}"><i class="fa-solid fa-{{ user.pacs_presence | presence_icon }}"></i></span><span>{{ user | last_status }}</span></span></td>
+                </tr>
             {% endif %}
             {% endwith %}
             {% endfor %}
-        </div>
-    </div>
+            </tbody>
+        </table>
+</div>
 {% endfor %}
-<h5 class="subtitle">Available desks ({{ data.desks | length }})</h5>
-<div class="tags">
-    {% for desk in data.desks.values() %}
-        {% if desk.available %}
-        <span class="tag icon-text">
-            <span class="icon has-text-{{ 'warning' if desk.users | length else 'success' if desk.online else 'grey' }}">
-                <i class="fa-solid fa-{{ 'user' if desk.users | length else 'desktop' }}"></i>
+</div>
+<div class="box m-2">
+    <span class="is-pulled-right">Updated: {{ data.updated | format_epoch }}</span>
+    <h5 class="subtitle">Available desks ({{ data.desks | length }})</h5>
+    <div class="tags">
+        {% for desk in data.desks.values() %}
+            {% if desk.available %}
+            <span class="tag icon-text">
+                <span class="icon has-text-{{ 'warning' if desk.users | length else 'success' if desk.online else 'grey' }}">
+                    <i class="fa-solid fa-{{ 'user' if desk.users | length else 'desktop' }}"></i>
+                </span>
+                <span>{{ desk.name }}</span>
             </span>
-            <span>{{ desk.name }}</span>
-        </span>
-        {% endif %}
-    {% endfor %}
+            {% endif %}
+        {% endfor %}
+    </div>
 </div>
