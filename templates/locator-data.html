@@ -48,7 +48,7 @@
 </div>
 <div class="box m-2">
     <span class="is-pulled-right">Updated: {{ data.updated | format_epoch }}</span>
-    <h5 class="subtitle">Available desks ({{ data.desks | length }})</h5>
+    <h5 class="subtitle">Available desks ({{ data.desks.values() | selectattr('available') | list | length }})</h5>
     <div class="tags">
         {% for desk in data.desks.values() %}
             {% if desk.available %}
