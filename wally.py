@@ -32,6 +32,7 @@ select ris,
         from case_staff
         where ct_staff_serial = st_serial
           and ct_key_type = 'R'
+          and ct_staff_function = 'R'
         order by ct_dor desc
         limit 1) as last_report,
        (select extract(epoch from rfe_dor at time zone 'Pacific/Auckland')::int
