@@ -4,10 +4,12 @@ import slixmpp
 import asyncio
 import ssl
 import enum
+import re
 from os import environ
 from slixmpp.xmlstream import ET
 from dataclasses import dataclass
 from app import app
+from coolify import pool
 
 JID = environ['XMPP_JID']
 PASSWORD = environ['XMPP_PASSWORD']
@@ -35,6 +37,9 @@ def presence_from_dict(d: dict) -> Presence:
                 return Presence.OFFLINE
     except StopIteration:
         return Presence.OFFLINE
+
+def generate_jid(pacs: str):
+    return re.sub(r'([A-Z])', lambda m: '|' + m.group(1).lower(), pacs) + '@cdhb'
 
 @dataclass
 class User:
@@ -76,8 +81,9 @@ class User:
 
 class XMPP(slixmpp.ClientXMPP):
 
-    def __init__(self, jid, password):
+    def __init__(self, jid, password, jids: set[str]):
         super().__init__(jid, password)
+        self.jids = jids
         self.ssl_context.check_hostname = False
         self.ssl_context.verify_mode = ssl.CERT_NONE
         self.enable_direct_tls = False
@@ -106,12 +112,7 @@ class XMPP(slixmpp.ClientXMPP):
                 user.presence = new_presence
 
     async def handle_roster_update(self, iq):
-        valid_jids = [jid.bare for jid in iq['roster']['items'] if "Radiologist - CDHB" in iq['roster']['items'][jid]['groups'] or "Registrar Rad - CDHB" in iq['roster']['items'][jid]['groups'] or jid.bare in (
-            # jid whitelist
-            'lberry@cdhb',
-            'dholnn@cdhb',
-            'teaenn@cdhb',
-        )]
+        valid_jids = [jid.bare for jid in iq['roster']['items'] if jid.bare in self.jids]
         if len(valid_jids) == 0: return
         new_query = self.make_iq_get()
         query = ET.Element('{jabber:iq:roster-dynamic}query')
@@ -151,7 +152,11 @@ class XMPP(slixmpp.ClientXMPP):
             if payload is not None: reply.set_payload(payload)
             reply.send()
 
-xmpp_client = XMPP(JID, PASSWORD)
+with pool.connection() as conn:
+    with conn.execute("select pacs from users") as cur:
+        jids = set(generate_jid(pacs) for (pacs,) in cur.fetchall())
+
+xmpp_client = XMPP(JID, PASSWORD, jids)
 
 @app.get('/xmpp/online')
 def get_online():
