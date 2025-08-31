@@ -6,8 +6,9 @@ from flask import render_template
 from os import path
 import json
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from xmpp import xmpp_client, Presence
+from zoneinfo import ZoneInfo
+
 
 locator_data = r"""
 with ris_log as (select max(sg_serial) as sg_serial
@@ -73,11 +74,12 @@ def wally_data():
     with open(file_path, 'r') as f:
         # desks and windows users with logon timestamp
         desks = {desk["ip"]:desk for desk in json.load(f)}
-    pacs_users_online = {pacs: user.presence for pacs, user in xmpp_client.users.items() if user.presence != Presence.OFFLINE}
+    pacs_users = {pacs: dict(presence=user.presence,updated=user.updated) for pacs, user in xmpp_client.users.items()}
     with coolify_pool.connection() as conn:
         with conn.execute(r"""select ris from users where sso ilike any(%s) or pacs = any(%s)""", [
                 [user["username"] for desk in desks.values() for user in desk["users"]],
-                list(pacs_users_online.keys()),
+                [pacs for pacs, presence_data in pacs_users.items() if presence_data['presence'] != Presence.OFFLINE],
+                # list(pacs_users_online.keys()),
             ], prepare=True) as cur:
             # ris users, ris logon data and last triage/last report timestamps
             ris_data = locator_ris([ris for (ris,) in cur.fetchall()])
@@ -85,7 +87,7 @@ def wally_data():
             cur.row_factory=dict_row
             users = {user["ris"]:user|ris_data[user["ris"]]|dict(
                 windows_logons=dict(),
-                pacs_presence=pacs_users_online.get(user["pacs"], Presence.OFFLINE),
+                pacs_presence=pacs_users.get(user["pacs"], dict(presence=Presence.OFFLINE, updated=0)),
             ) for user in cur.fetchall()}
     sso_map = {user["sso"].lower(): uid for uid, user in users.items()}
     # radiologist_desks = {}
@@ -101,7 +103,7 @@ def wally_data():
             if (sso:= user_entry["username"].lower()) in sso_map:
                 uid = sso_map[sso]
                 desk_users.add(uid)
-                if desk_available and users[uid]['pacs_presence'] != Presence.OFFLINE:
+                if desk_available and users[uid]['pacs_presence']['presence'] != Presence.OFFLINE:
                     desk_available = False
                 # deskmap = radiologist_desks if users[uid]["radiologist"] else reg_fellow_desks
                 # if ip not in deskmap:
@@ -128,34 +130,25 @@ def wally_data():
         updated=updated,
     )
 
-tz=ZoneInfo("Pacific/Auckland")
+TZ=ZoneInfo("Pacific/Auckland")
+
+def format_iso8601(posix: int) -> str:
+    return datetime.fromtimestamp(posix, TZ).isoformat()
 
 def format_epoch(timestamp, format_string="%d/%m/%Y %-I:%M:%S %p") -> str:
-    return datetime.fromtimestamp(timestamp, tz).strftime(format_string)
+    return datetime.fromtimestamp(timestamp, TZ).strftime(format_string)
 
-def last_status(user) -> str:
-    result, timestamp = None, 0
-    
+def last_timestamp(user):
+    timestamp = 0
     for test in ('last_report', 'last_triage'):
         if user[test] is not None and user[test] > timestamp:
-            result, timestamp = test, user[test]
+            timestamp = user[test]
     if user['ris_logon'] is not None and user['ris_logon']['timestamp'] > timestamp:
-        result, timestamp = 'ris_logon', user['ris_logon']['timestamp']
+        timestamp = user['ris_logon']['timestamp']
     for w in user['windows_logons'].values():
         if w > timestamp:
-            result, timestamp = 'windows_logon', w
-    return datetime.fromtimestamp(timestamp, tz).strftime("%-I:%M %p")
-    match result:
-        case 'last_report':
-            return f'Report: {format_epoch(timestamp)}'
-        case 'last_triage':
-            return f'Triage: {format_epoch(timestamp)}'
-        case 'ris_logon':
-            return f'RIS logon: {format_epoch(timestamp)}'
-        case 'windows_logon':
-            return f'Windows logon: {format_epoch(timestamp)}'
-        case _:
-            return ''
+            timestamp = w
+    return max(timestamp, user['pacs_presence']['updated'])
 
 def presence_icon (presence: Presence) -> str:
     match presence:
@@ -179,8 +172,9 @@ def presence_icon_class(presence: Presence) -> str:
         case Presence.OFFLINE:
             return 'grey'
 
+app.jinja_env.filters['format_iso8601'] = format_iso8601
 app.jinja_env.filters['format_epoch'] = format_epoch
-app.jinja_env.filters['last_status'] = last_status
+app.jinja_env.filters['last_timestamp'] = last_timestamp
 app.jinja_env.filters['presence_icon'] = presence_icon
 app.jinja_env.filters['presence_icon_class'] = presence_icon_class
 

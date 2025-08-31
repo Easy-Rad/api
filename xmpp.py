@@ -10,11 +10,13 @@ from slixmpp.xmlstream import ET
 from dataclasses import dataclass
 from app import app
 from coolify import pool
+from datetime import datetime
 
 JID = environ['XMPP_JID']
 PASSWORD = environ['XMPP_PASSWORD']
 SERVER = environ.get('XMPP_SERVER', 'app-inteleradha-p.healthhub.health.nz')
 SERVER_PORT = int(environ.get('XMPP_PORT', '5222'))
+
 
 class Presence(enum.StrEnum):
     AVAILABLE = "available"
@@ -48,11 +50,13 @@ def generate_pacs(jid: str):
 class User:
     name: str
     presence: Presence
+    updated: int
 
     def toJSON(self):
         return dict(
             name=self.name,
             presence=self.presence.value,
+            updated=self.updated,
         )
 
 class XMPP(slixmpp.ClientXMPP):
@@ -89,6 +93,7 @@ class XMPP(slixmpp.ClientXMPP):
                 if user.presence != new_presence:
                     logging.info(f"{user.name}: {user.presence} -> {new_presence}")
                     user.presence = new_presence
+                    user.updated = int(datetime.now().timestamp())
 
     async def handle_roster_update(self, iq):
         valid_jids = [jid.bare for jid in iq['roster']['items'] if jid.bare in self.jids]
@@ -102,12 +107,14 @@ class XMPP(slixmpp.ClientXMPP):
             item = ET.Element('item', attrib={'jid': jid})
             batch.append(item)
         people = await new_query.send()
+        now = datetime.now()
         with self.users_lock:
             for person in people.xml.iterfind(".//{jabber:iq:roster-dynamic}item[@jid]"):
                 jid = person.attrib['jid']
                 user = User(
                     person.findtext("{jabber:iq:roster-dynamic}full-name"),
                     presence_from_dict(self.client_roster.presence(jid)),
+                    0,
                 )
                 self.users[generate_pacs(jid)] = user
 
