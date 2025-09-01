@@ -72,7 +72,7 @@
                         <tr>
                             <td>{{ user.first_name }} {{ user.last_name }}</td>
                             <td>{{ user.specialty }}</td>
-                            <td>{{ desk.name }}</td>
+                            <td title="{{ desk.computer_name }}">{{ desk.name }}</td>
                             <td>{% if desk.phone %}{{ desk.phone }}{% endif %}</td>
                             <td>
                                 <div class="dropdown is-hoverable is-unselectable">
