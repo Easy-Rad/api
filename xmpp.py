@@ -107,7 +107,6 @@ class XMPP(slixmpp.ClientXMPP):
             item = ET.Element('item', attrib={'jid': jid})
             batch.append(item)
         people = await new_query.send()
-        now = datetime.now()
         with self.users_lock:
             for person in people.xml.iterfind(".//{jabber:iq:roster-dynamic}item[@jid]"):
                 jid = person.attrib['jid']

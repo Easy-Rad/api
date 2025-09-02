@@ -1,16 +1,17 @@
 from app import app
 from comrad import pool as comrad_pool
 from coolify import pool as coolify_pool
-from psycopg.rows import dict_row
 from flask import render_template
 from os import path
 import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from xmpp import xmpp_client, Presence
 from zoneinfo import ZoneInfo
 
+TZ=ZoneInfo("Pacific/Auckland")
 
-locator_data = r"""
+locator_query = r"""
 with ris_log as (select max(sg_serial) as sg_serial
                  from syslog
                  where sg_error_number = 121
@@ -18,17 +19,13 @@ with ris_log as (select max(sg_serial) as sg_serial
                  group by sg_user
                  order by sg_serial desc),
      ris_users as (select sg_user::text                                                                      as ris,
-                          extract(epoch from sg_datetime at time zone 'Pacific/Auckland')::int               as ris_logon,
-                          sg_terminal_tcpip::text                                                            as ris_terminal,
-                          (regexp_match(sg_err_supplement, 'Login from ((?:[0-9]{1,3}\.){3}[0-9]{1,3})'))[1] as ris_ip
+                          extract(epoch from sg_datetime at time zone 'Pacific/Auckland')::int               as ris_logon
                    from ris_log
                             join syslog using (sg_serial)
                    where sg_err_supplement ~~ 'Login from %%'),
      windows_users as (select unnest(%s::text[]) as ris)
 select ris,
        ris_logon,
-       ris_terminal,
-       ris_ip,
        (select extract(epoch from ct_dor at time zone 'Pacific/Auckland')::int
         from case_staff
         where ct_staff_serial = st_serial
@@ -53,102 +50,120 @@ where st_status = 'A'
   and st_job_class in ('MC', 'JR')
 """
 
-def locator_ris(windows_users:list[str]):
-    with comrad_pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(locator_data, [windows_users], prepare=True)
-            return {user["ris"]:dict(
-                last_report=user["last_report"],
-                last_triage=user["last_triage"],
-                ris_logon=dict(
-                    ip=user["ris_ip"],
-                    terminal=user["ris_terminal"],
-                    timestamp=user["ris_logon"],
-                ) if user["ris_ip"] else None,
-            ) for user in cur.fetchall()}
+@dataclass 
+class RisData:
+    timestamp: datetime | None
+    last_report: datetime | None
+    last_triage: datetime | None
 
-@app.get('/wally_data')
+@dataclass 
+class PacsPresence:
+    presence: Presence
+    timestamp: datetime | None
+
+@dataclass 
+class DeskWindowsLogon:
+    first_name: str
+    last_name: str
+    timestamp: datetime
+
+@dataclass
+class Desk:
+    desk_name: str
+    computer_name: str
+    phone: str | None
+    online: bool
+    available: bool = True
+    windows_logons: list[DeskWindowsLogon] = field(default_factory=list)
+
+@dataclass 
+class UserWindowsLogon:
+    desk: Desk
+    timestamp: datetime
+
+@dataclass
+class UserRow:
+    first_name: str
+    last_name: str
+    specialty: str
+    radiologist: bool
+    ris_data: RisData
+    presence: PacsPresence
+    windows_logons: list[UserWindowsLogon] = field(default_factory=list)
+
+def locator_ris(windows_users:list[str]) -> dict[str, RisData]:
+    with comrad_pool.connection() as conn:
+        with conn.execute(locator_query, [windows_users], prepare=True) as cur:
+            return {ris:RisData(
+                datetime.fromtimestamp(ris_logon, TZ) if ris_logon is not None else None,
+                datetime.fromtimestamp(last_report, TZ) if last_report is not None else None,
+                datetime.fromtimestamp(last_triage, TZ) if last_triage is not None else None,
+            ) for  ris, ris_logon, last_report, last_triage in cur.fetchall()}
+
 def wally_data():
     file_path = 'locator/locator.json'
-    updated = int(path.getmtime(file_path))
+    updated = datetime.fromtimestamp(int(path.getmtime(file_path)), TZ)
     with open(file_path, 'r') as f:
-        # desks and windows users with logon timestamp
         desks = {desk["ip"]:desk for desk in json.load(f)}
-    pacs_users = {pacs: dict(presence=user.presence,updated=user.updated) for pacs, user in xmpp_client.users.items()}
+    pacs_users = {pacs: PacsPresence(user.presence, datetime.fromtimestamp(user.updated, TZ) if user.updated > 0 else None) for pacs, user in xmpp_client.users.items()}
     with coolify_pool.connection() as conn:
         with conn.execute(r"""select ris from users where sso ilike any(%s) or pacs = any(%s)""", [
                 [user["username"] for desk in desks.values() for user in desk["users"]],
-                [pacs for pacs, presence_data in pacs_users.items() if presence_data['presence'] != Presence.OFFLINE],
-                # list(pacs_users_online.keys()),
+                [pacs for pacs, pacs_presence in pacs_users.items() if pacs_presence.presence != Presence.OFFLINE],
             ], prepare=True) as cur:
-            # ris users, ris logon data and last triage/last report timestamps
             ris_data = locator_ris([ris for (ris,) in cur.fetchall()])
-        with conn.execute(r"""select * from users where show_in_locator and ris = any(%s)""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
-            cur.row_factory=dict_row
-            users = {user["ris"]:user|ris_data[user["ris"]]|dict(
-                windows_logons=dict(),
-                pacs_presence=pacs_users.get(user["pacs"], dict(presence=Presence.OFFLINE, updated=0)),
-            ) for user in cur.fetchall()}
-    sso_map = {user["sso"].lower(): uid for uid, user in users.items()}
-    # radiologist_desks = {}
-    # reg_fellow_desks = {}
-    # empty_desks = []
-    for ip, desk in desks.items():
-        del desk["ip"]
-        desk_available = True
-        # empty = True
-        # [sso_map[sso] for user_entry in desk["users"] if (sso := user_entry["username"].lower()) in sso_map]
-        desk_users = set()
-        for user_entry in desk["users"]:
-            if (sso:= user_entry["username"].lower()) in sso_map:
-                uid = sso_map[sso]
-                desk_users.add(uid)
-                if desk_available and users[uid]['pacs_presence']['presence'] != Presence.OFFLINE:
-                    desk_available = False
-                # deskmap = radiologist_desks if users[uid]["radiologist"] else reg_fellow_desks
-                # if ip not in deskmap:
-                #     deskmap[ip] = set()
-                # deskmap[ip].add(uid)
-                users[uid]["windows_logons"][ip]=user_entry["logon"]
-                # empty = False
-        desk["available"] = desk_available
-        desk["users"] = list(desk_users)
-        # if empty:
-        #     empty_desks.append(ip)
-    offsite : list[str] = []
-    for uid, user in users.items():
-        del user["ris"]
-        if len(user["windows_logons"]) == 0 and (user["ris_logon"] is None or user["ris_logon"]["ip"] not in desks):
-            offsite.append(uid)
+        with conn.execute(r"""select ris, first_name, last_name, specialty, lower(sso) as sso, radiologist, pacs from users where show_in_locator and ris = any(%s) order by last_name""", [[ris_user for ris_user in ris_data.keys()]], prepare=True) as cur:
+            users: dict[str, UserRow] = {}
+            for ris, first_name, last_name, specialty, sso, radiologist, pacs in cur.fetchall():
+                u = UserRow(
+                    first_name,
+                    last_name,
+                    specialty,
+                    radiologist,
+                    ris_data[ris],
+                    pacs_users.get(pacs, PacsPresence(Presence.OFFLINE, None)),
+                )
+                users[sso] = u
+    available_desks = []
+    for desk_data in desks.values():
+        desk = Desk(
+            desk_data["name"],
+            desk_data["computer_name"],
+            desk_data["phone"],
+            desk_data["online"],
+        )
+        for user_entry in desk_data["users"]:
+            try:
+                u = users[user_entry["username"].lower()]
+                timestamp = datetime.fromtimestamp(user_entry["logon"], TZ)
+                desk.available = desk.available and u.presence.presence == Presence.OFFLINE
+                u.windows_logons.append(UserWindowsLogon(desk, timestamp))
+                desk.windows_logons.append(DeskWindowsLogon(u.first_name, u.last_name, timestamp))
+            except KeyError:
+                pass
+        if desk.available:
+            available_desks.append(desk)
     return dict(
-        # radiologist_desks={ip: list(uids) for ip, uids in radiologist_desks.items()},
-        # reg_fellow_desks={ip: list(uids) for ip, uids in reg_fellow_desks.items()},
-        # empty_desks=empty_desks,
-        offsite=offsite,
-        users=users,
-        desks=desks,
+        users=list(users.values()),
+        available_desks=available_desks,
         updated=updated,
     )
 
-TZ=ZoneInfo("Pacific/Auckland")
+def format_iso8601(timestamp: datetime) -> str:
+    return timestamp.isoformat()
 
-def format_iso8601(posix: int) -> str:
-    return datetime.fromtimestamp(posix, TZ).isoformat()
+def format_epoch(timestamp: datetime, format_string="%d/%m/%Y %-I:%M:%S %p") -> str:
+    return timestamp.strftime(format_string)
 
-def format_epoch(timestamp, format_string="%d/%m/%Y %-I:%M:%S %p") -> str:
-    return datetime.fromtimestamp(timestamp, TZ).strftime(format_string)
-
-def last_timestamp(user):
-    timestamp = 0
-    for test in ('last_report', 'last_triage'):
-        if user[test] is not None and user[test] > timestamp:
-            timestamp = user[test]
-    if user['ris_logon'] is not None and user['ris_logon']['timestamp'] > timestamp:
-        timestamp = user['ris_logon']['timestamp']
-    for w in user['windows_logons'].values():
-        if w > timestamp:
-            timestamp = w
-    return max(timestamp, user['pacs_presence']['updated'])
+def last_timestamp(user: UserRow, windows_logon: datetime | None) -> datetime | None:
+    timestamps = [timestamp for timestamp in (
+        user.ris_data.last_report,
+        user.ris_data.last_triage,
+        user.ris_data.timestamp,
+        user.presence.timestamp,
+        windows_logon,
+    ) if timestamp is not None]
+    return max(timestamps) if len(timestamps) > 0 else None
 
 def presence_icon (presence: Presence) -> str:
     match presence:
