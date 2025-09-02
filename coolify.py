@@ -153,6 +153,6 @@ def ffs(results):
 @app.get('/desks')
 def get_desks():
     with pool.connection() as conn:
-        with conn.execute(r"""select host(ip) as ip, name, computer_name, area, phone from desks order by sort_order""", prepare=True) as cur:
+        with conn.execute(r"""select name, computer_name, phone from desks order by sort_order""", prepare=True) as cur:
             cur.row_factory = dict_row
             return cur.fetchall()

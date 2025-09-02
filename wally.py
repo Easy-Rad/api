@@ -104,11 +104,11 @@ def wally_data():
     file_path = 'locator/locator.json'
     updated = datetime.fromtimestamp(int(path.getmtime(file_path)), TZ)
     with open(file_path, 'r') as f:
-        desks = {desk["ip"]:desk for desk in json.load(f)}
+        desks = json.load(f)
     pacs_users = {pacs: PacsPresence(user.presence, datetime.fromtimestamp(user.updated, TZ) if user.updated > 0 else None) for pacs, user in xmpp_client.users.items()}
     with coolify_pool.connection() as conn:
         with conn.execute(r"""select ris from users where sso ilike any(%s) or pacs = any(%s)""", [
-                [user["username"] for desk in desks.values() for user in desk["users"]],
+                [user["username"] for desk_data in desks for user in desk_data["users"]],
                 [pacs for pacs, pacs_presence in pacs_users.items() if pacs_presence.presence != Presence.OFFLINE],
             ], prepare=True) as cur:
             ris_data = locator_ris([ris for (ris,) in cur.fetchall()])
@@ -125,7 +125,7 @@ def wally_data():
                 )
                 users[sso] = u
     available_desks = []
-    for desk_data in desks.values():
+    for desk_data in desks:
         desk = Desk(
             desk_data["name"],
             desk_data["computer_name"],
