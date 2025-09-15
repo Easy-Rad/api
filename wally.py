@@ -120,16 +120,6 @@ def format_iso8601(posix: int) -> str:
 def format_epoch(posix: int, format_string="%d/%m/%Y %-I:%M:%S %p") -> str:
     return datetime.fromtimestamp(posix, TZ).strftime(format_string)
 
-# def last_timestamp(user: UserRow, windows_logon: datetime | None) -> datetime | None:
-#     timestamps = [timestamp for timestamp in (
-#         user.ris_data.last_report,
-#         user.ris_data.last_triage,
-#         user.ris_data.timestamp,
-#         user.presence.timestamp,
-#         windows_logon,
-#     ) if timestamp is not None]
-#     return max(timestamps) if len(timestamps) > 0 else None
-
 def presence_icon (presence: str) -> str:
     match presence:
         case 'Available':
@@ -154,7 +144,6 @@ def presence_icon_class(presence: str) -> str:
 
 app.jinja_env.filters['format_iso8601'] = format_iso8601
 app.jinja_env.filters['format_epoch'] = format_epoch
-# app.jinja_env.filters['last_timestamp'] = last_timestamp
 app.jinja_env.filters['presence_icon'] = presence_icon
 app.jinja_env.filters['presence_icon_class'] = presence_icon_class
 

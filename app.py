@@ -16,7 +16,6 @@ import comrad
 import coolify
 import physician_scheduler
 import wally
-import xmpp
 
 @app.get('/health')
 def health():
