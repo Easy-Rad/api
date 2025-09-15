@@ -50,7 +50,6 @@
             </div>
         </div>
         </div>    
-        <div class="column is-narrow"><h6 class="subtitle is-6">Updated <relative-time datetime="{{ data.updated | format_iso8601 }}"/></h6></div>
     </div>
     <div class="columns">
         {% for title in ("Radiologists", "Registrars and Fellows") %}
@@ -65,61 +64,52 @@
                         </tr>
                     </thead>
                     <tbody>
-                    {% for user in data.users %}
-                    {% if user.presence.presence != 'offline' and user.radiologist == (title == "Radiologists") %}
-                    {% for windows_logon in (user.windows_logons if user.windows_logons | length else [none]) %}
-                    {% with desk = windows_logon.desk if windows_logon is not none else none %}
-
+                    {% for ris, user in data.online_users.items() %}
+                    {% if user.radiologist == (title == "Radiologists") %}
                         <tr>
                             <td>{{ user.first_name }} {{ user.last_name }}</td>
                             <td>{{ user.specialty }}</td>
-                            {% if desk is not none %}
-                            <td title="{{ desk.computer_name }}">{{ desk.desk_name }}</td>
-                            {% else %}
-                            <td>Offsite</td>
-                            {% endif %}
-                            <td>{% if desk is not none and desk.phone is not none %}{{ desk.phone }}{% endif %}</td>
+                            <td{% if user.computer is not none %} title={{ user.computer }}{% endif %}>{% if user.desk is none %}Offsite{% else %}{{ user.desk }}{% endif %}</td>
+                            <td>{% if user.phone is not none %}{{ user.phone }}{% endif %}</td>
                             <td>
                                 <div class="dropdown is-hoverable is-unselectable">
                                     <div class="dropdown-trigger">
-                                        <span class="icon has-text-{{ user.presence.presence | presence_icon_class }}">
-                                            <i class="fa-solid fa-{{ user.presence.presence | presence_icon }}"></i>
+                                        <span class="icon has-text-{{ user.pacs_presence | presence_icon_class }}">
+                                            <i class="fa-solid fa-{{ user.pacs_presence | presence_icon }}"></i>
                                         </span>
-                                        {% with last_active = user | last_timestamp(windows_logon.timestamp if windows_logon is not none else none) %}
-                                        {% if last_active is not none %}
-                                        <relative-time datetime="{{ last_active | format_iso8601 }}" />
+                                        {% if user.last_active is not none %}
+                                        <relative-time datetime="{{ user.last_active | format_iso8601 }}" />
                                         {% endif %}
-                                        {% endwith %}
                                     </div>
                                     <div class="dropdown-menu">
                                         <div class="dropdown-content">
                                             <div class="dropdown-item">
                                                 <span>
-                                                    {% if user.presence.timestamp is not none %}
-                                                    {{ user.presence.presence | title }}: <relative-time datetime="{{ user.presence.timestamp | format_iso8601 }}"/>
+                                                    {% if user.pacs_last_updated is not none %}
+                                                    {{ user.pacs_presence }}: <relative-time datetime="{{ user.pacs_last_updated | format_iso8601 }}"/>
                                                     {% else %}
-                                                    {{ user.presence.presence | title }}
+                                                    {{ user.pacs_presence }}
                                                     {% endif %}
                                                 </span>
                                             </div>
-                                            {% if user.ris_data.last_report is not none %}
+                                            {% if user.ps360_last_event_timestamp is not none and user.ps360_last_event_type is not none %}
                                             <div class="dropdown-item">
-                                                <span>Last report: <relative-time datetime="{{ user.ris_data.last_report | format_iso8601 }}"/></span>
+                                                <span><span title="{{ user.ps360_last_event_type }}">Dictation: </span><relative-time datetime="{{ user.ps360_last_event_timestamp | format_iso8601 }}"/></span>
                                             </div>
                                             {% endif %}
-                                            {% if user.ris_data.last_triage is not none %}
+                                            {% if user.last_report is not none %}
                                             <div class="dropdown-item">
-                                                <span>Last triage: <relative-time datetime="{{ user.ris_data.last_triage | format_iso8601 }}"/></span>
+                                                <span>Report: <relative-time datetime="{{ user.last_report | format_iso8601 }}"/></span>
                                             </div>
                                             {% endif %}
-                                            {% if user.ris_data.timestamp is not none %}
+                                            {% if user.last_triage is not none %}
                                             <div class="dropdown-item">
-                                                <span>RIS logon: <relative-time datetime="{{ user.ris_data.timestamp | format_iso8601 }}"/></span>
+                                                <span>Triage: <relative-time datetime="{{ user.last_triage | format_iso8601 }}"/></span>
                                             </div>
                                             {% endif %}
-                                            {% if windows_logon is not none %}
+                                            {% if user.windows_logon is not none and user.windows_computer is not none %}
                                             <div class="dropdown-item">
-                                                <span>Windows logon: <relative-time datetime="{{ windows_logon.timestamp | format_iso8601 }}"/></span>
+                                                <span title="{{ user.windows_computer }}">Windows logon: <relative-time datetime="{{ user.windows_logon | format_iso8601 }}"/></span>
                                             </div>
                                             {% endif %}
                                         </div>
@@ -127,8 +117,6 @@
                                 </div>
                             </td>
                         </tr>
-                    {% endwith %}
-                    {% endfor %}
                     {% endif %}
                     {% endfor %}
                     </tbody>
@@ -141,17 +129,17 @@
         {% for desk in data.available_desks %}
             <div class="dropdown is-up is-hoverable is-unselectable">
                 <span class="tag icon-text">
-                    <span class="icon has-text-{{ 'warning' if desk.windows_logons | length else 'success' if desk.online else 'grey' }}">
-                        <i class="fa-solid fa-{{ 'user' if desk.windows_logons | length else 'desktop' }}"></i>
+                    <span class="icon has-text-{{ 'warning' if desk.users is not none else 'success' if desk.online else 'grey' }}">
+                        <i class="fa-solid fa-{{ 'user' if desk.users is not none else 'desktop' }}"></i>
                     </span>
-                    <span title="{{ desk.computer_name }}">{{ desk.desk_name }}</span>
+                    <span title="{{ desk.computer }}">{{ desk.desk }}</span>
                 </span>
-                {% if desk.windows_logons | length %}
+                {% if desk.users is not none and desk.users | length %}
                     <div class="dropdown-menu">
                         <div class="dropdown-content">
-                            {% for windows_logon in desk.windows_logons %}
+                            {% for full_name, timestamp in desk.users.items() %}
                             <div class="dropdown-item">
-                                {{ windows_logon.first_name }} {{ windows_logon.last_name }} logged in <relative-time datetime="{{ windows_logon.timestamp | format_iso8601 }}"/>
+                                {{ full_name }} logged in <relative-time datetime="{{ timestamp | format_iso8601 }}"/>
                             </div>
                             {% endfor %}
                         </div>

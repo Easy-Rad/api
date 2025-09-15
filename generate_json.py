@@ -3,10 +3,16 @@ import psycopg
 from os import environ
 from itertools import groupby
 import re
+import xml.etree.ElementTree as ET
+import pymssql
+
+
+                 
 
 
 with psycopg.connect(environ['AUTOTRIAGE_CONN']) as connection:
     with connection.cursor() as cursor:
+        pass
         # with open('data/exams.json', 'w') as f:
         #     cursor.execute('''select code, name, modality, body_part from examination order by modality, code''')
         #     json.dump(
@@ -89,3 +95,22 @@ with psycopg.connect(environ['AUTOTRIAGE_CONN']) as connection:
         #         user['first_name'],
         #         user['last_name'],
         #     ) for jid, user in json.load(f).items()])
+        # tree = ET.parse('.vscode/powerscribe_users.xml')
+        # ns = {
+        #     's': 'http://www.w3.org/2003/05/soap-envelope',
+        #     'a': 'http://www.w3.org/2005/08/addressing',
+        #     'b': 'http://schemas.datacontract.org/2004/07/Nuance.Radiology.Services.Contracts'
+        # }
+        # cursor.executemany(
+        #     "update users set ps360 = %s where last_name || ', ' || first_name = %s",
+        # [(
+        #     pair.find('b:ID', ns).text,
+        #     pair.find('b:Name', ns).text,
+        # ) for pair in tree.getroot().findall('.//b:IDNamePair', ns)])
+        with open('.vscode/physch_users.json', 'r') as f:
+            cursor.executemany("update users set physch = %s where first_name = %s and last_name = %s", ((
+                    user["Abbr"],
+                    user["FirstName"],
+                    user["LastName"],
+                ) for user in json.load(f)))
+                

@@ -1,9 +1,12 @@
 import atexit
+import logging
 from os import environ
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tokenise import tokenise_request
 from app import app
+from flask import request
+from psycopg.types.json import Jsonb
 
 pool = ConnectionPool(
     environ['AUTOTRIAGE_CONN'],
@@ -156,3 +159,33 @@ def get_desks():
         with conn.execute(r"""select name, computer_name, phone from desks order by sort_order""", prepare=True) as cur:
             cur.row_factory = dict_row
             return cur.fetchall()
+
+update_users = r"""
+update users
+set windows_logons = coalesce(value, '{}'::jsonb)
+from input_data_temp, jsonb_each(data -> 'users')
+right join users as u on u.sso ilike key
+where users.ris = u.ris
+"""
+
+update_desks = r"""
+update desks
+set online = coalesce(value::boolean, false)
+from input_data_temp, jsonb_each(data -> 'online')
+right join desks as d on d.computer_name = key
+where desks.computer_name = d.computer_name
+"""
+
+@app.post('/desks')
+def post_desks():
+    r = request.get_json(force=True)
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(r"""create temp table input_data_temp (data jsonb) on commit drop""")
+            cur.execute(r"""insert into input_data_temp (data) values (%s)""", (Jsonb(r),))
+            cur.execute(update_users) # type: ignore
+            cur.execute(update_desks) # type: ignore
+            logging.info(f'Users online: {len(r["users"])}')
+            online_computers = [computer_name for computer_name, online in r["online"].items() if online ]
+            logging.info(f'Computers online: {len(online_computers)} of {len(r["online"])}')
+            return ('',204)
