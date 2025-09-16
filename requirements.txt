@@ -6,4 +6,3 @@ gunicorn[gevent]
 pymssql
 flask-orjson
 holidays
-slixmpp

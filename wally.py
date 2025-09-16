@@ -81,6 +81,7 @@ select
     users
 from desks
     left join windows_logons using (computer_name)
+where show_if_available
 order by sort_order
 """
 
