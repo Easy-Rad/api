@@ -188,7 +188,7 @@ where AssignDate >= coalesce(%d, @today)
   and AssignDate <= coalesce(%d, @today)
   and (%s is null or Employee.Abbr = %s)
   and (%d is null or SchedData.ShiftID = %d)
-order by Shift.DisplayOrder, Shift.ShiftName, Shift.ShiftID
+order by Shift.StartTime, Shift.EndTime, Shift.DisplayOrder, Shift.ShiftName, Shift.ShiftID
 """
 @app.get('/calendar')
 def get_calendar_all():
