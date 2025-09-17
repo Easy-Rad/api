@@ -10,8 +10,8 @@ TZ=ZoneInfo("Pacific/Auckland")
 
 users_query = r"""
 with
-    filtered_users as (select *, extract(epoch from ps360_last_event_timestamp)::int as ps360_last_event_posix from users where show_in_locator and pacs_presence <> 'Offline' order by last_name, first_name),
-    windows_logons as (select ris, key as windows_computer, value::int as windows_logon, ROW_NUMBER() OVER (PARTITION BY ris ORDER BY value::int DESC) ranked_order from filtered_users, jsonb_each(windows_logons)),
+    filtered_users as (select *, extract(epoch from ps360_last_event_timestamp)::int as ps360_last_event_posix from users where show_in_locator and pacs_presence <> 'Offline'),
+    windows_logons as (select ris, key as windows_computer, value::int as windows_logon, row_number() over (partition by ris order by value::int desc) ranked_order from filtered_users, jsonb_each(windows_logons)),
     combined_data as (select
         filtered_users.ris,
         first_name,
@@ -38,6 +38,7 @@ select
     phone
 from combined_data
 left join desks on desks.computer_name = combined_data.computer
+order by last_name, first_name
 """
 
 ris_query = r"""
