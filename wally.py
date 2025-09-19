@@ -1,6 +1,7 @@
 from app import app
 from comrad import pool as comrad_pool
 from coolify import pool as coolify_pool
+from physician_scheduler import connection as phys_sched_connection
 from psycopg.rows import dict_row
 from flask import render_template
 from datetime import datetime
@@ -16,6 +17,7 @@ with
         filtered_users.ris,
         first_name,
         last_name,
+        physch,
         specialty,
         radiologist,
         case
@@ -65,6 +67,22 @@ from staff
     where st_user_code = any(%s)
 """
 
+phys_sched_query = r"""
+declare
+    @today int = year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP),
+    @current_time int = 100 * DATEPART(hour, CURRENT_TIMESTAMP) + DATEPART(minute, CURRENT_TIMESTAMP)
+select
+    ShiftName as shift,
+    FORMAT(Shift.StartTime / 100 % 24, '00') + ':' + format(Shift.StartTime % 100, '00') as start,
+    FORMAT(Shift.EndTime / 100 % 24, '00') + ':' + format(Shift.EndTime % 100, '00') as 'end',
+    CAST(IIF(Shift.StartTime <= @current_time and Shift.EndTime > @current_time, 1, 0) as bit) as active
+from SchedData
+    join Employee on SchedData.EmployeeID = Employee.EmployeeID
+    join Shift on SchedData.ShiftID = Shift.ShiftID
+where AssignDate = @today and Employee.Abbr = %s
+order by Shift.StartTime, Shift.EndTime, Shift.DisplayOrder, Shift.ShiftName, Shift.ShiftID
+"""
+
 available_desks_query = r"""
 with windows_logons as (
     select
@@ -88,20 +106,25 @@ order by sort_order
 
 @app.get('/wally_data')
 def wally_data():
-    with coolify_pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(users_query, prepare=True)
-            online_users = {user["ris"]:user for user in cur}
-            cur.execute(available_desks_query, prepare=True)
-            available_desks = cur.fetchall()
+    with coolify_pool.connection() as coolify_conn:
+        with coolify_conn.cursor(row_factory=dict_row) as coolify_cur:
+            coolify_cur.execute(users_query, prepare=True) # type: ignore
+            online_users = {}
+            with phys_sched_connection() as phys_sched_conn:
+                with phys_sched_conn.cursor(as_dict=True) as phys_sched_cur:
+                    for user in coolify_cur:
+                        phys_sched_cur.execute(phys_sched_query, (user["physch"],))
+                        user["roster"] = phys_sched_cur.fetchall()
+                        online_users[user.pop("ris")] = user
+            coolify_cur.execute(available_desks_query, prepare=True) # type: ignore
+            available_desks = coolify_cur.fetchall()
     with comrad_pool.connection() as conn:
-        with conn.execute(ris_query, ([ris for ris in online_users.keys()],), prepare=True) as cur:
+        with conn.execute(ris_query, ([ris for ris in online_users.keys()],), prepare=True) as cur: # type: ignore
             ris_data = {ris:dict(
                 last_report=last_report,
                 last_triage=last_triage,
             ) for ris, last_report, last_triage in cur}
     for ris, user in online_users.items():
-        del user["ris"]
         user.update(ris_data[ris])
         timestamps = [timestamp for timestamp in (
             user["last_report"],

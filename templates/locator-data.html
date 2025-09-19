@@ -67,7 +67,18 @@
                     {% for ris, user in data.online_users.items() %}
                     {% if user.radiologist == (title == "Radiologists") %}
                         <tr>
-                            <td>{{ user.first_name }} {{ user.last_name }}</td>
+                            <td><div class="dropdown is-hoverable is-unselectable">
+                                <div class="dropdown-trigger">{{ user.first_name }} {{ user.last_name }}</div>
+                                {% if user.roster | length %}
+                                <div class="dropdown-menu">
+                                    <div class="dropdown-content">
+                                        {% for entry in user.roster %}
+                                            <div class="dropdown-item has-text-{{ 'black' if entry.active else 'grey-light' }}" title="{{ entry.start }} - {{ entry.end }}">{{ entry.shift }}</div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div></td>
                             <td>{{ user.specialty }}</td>
                             <td{% if user.computer is not none %} title={{ user.computer }}{% endif %}>{% if user.desk is none %}Offsite{% else %}{{ user.desk }}{% endif %}</td>
                             <td>{% if user.phone is not none %}{{ user.phone }}{% endif %}</td>
