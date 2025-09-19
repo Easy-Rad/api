@@ -9,7 +9,6 @@ from psycopg_pool import ConnectionPool
 from error import ApiError
 from coolify import autotriage, remember_autotriage, ffs
 from werkzeug.exceptions import BadRequest
-from zoneinfo import ZoneInfo
 import holidays
 
 DB_HOST = environ.get('DB_HOST', '159.117.39.229')

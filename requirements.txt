@@ -6,3 +6,7 @@ gunicorn[gevent]
 pymssql
 flask-orjson
 holidays
+pandas
+pyparsing
+lxml
+pyyaml

@@ -1,13 +1,10 @@
-from app import app
+from app import app, TZ
 from comrad import pool as comrad_pool
 from coolify import pool as coolify_pool
 from physician_scheduler import connection as phys_sched_connection
 from psycopg.rows import dict_row
 from flask import render_template
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
-TZ=ZoneInfo("Pacific/Auckland")
 
 users_query = r"""
 with
