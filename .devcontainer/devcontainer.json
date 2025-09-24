@@ -17,12 +17,15 @@
 		"vscode": {
 			"extensions": [
 				"humao.rest-client"
-			]
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "/usr/local/bin/python3"
+			}
 		}
 	},
-	"mounts": [
-		"source=${localEnv:HOME}${localEnv:USERPROFILE}/locator,target=${localWorkspaceFolder}/locator,type=bind,consistency=cached"
-    ]
+	"features": {
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+	}
 
 	// Configure tool-specific properties.
 	// "customizations": {},

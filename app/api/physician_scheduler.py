@@ -1,17 +1,8 @@
-import pymssql
-from os import environ
+from typing import LiteralString
 from itertools import groupby
-from app import app
-from flask import request
-
-def connection():
-    return pymssql.connect(
-        server=environ.get('PHYSCH_HOST', 'MSCHCPSCHSQLP1.cdhb.local'),
-        user=f"cdhb\\{environ['SSO_USER']}",
-        password=environ['SSO_PASSWORD'],
-        database='PhySch',
-        tds_version='7.4',
-    )
+from quart import request
+from . import app
+from ..database import phy_sch_connection
 
 base_roster_query_users = r"""
 select distinct Employee.Abbr, FirstName, LastName
@@ -19,9 +10,9 @@ from Pattern
 join Employee on Pattern.EmployeeID=Employee.EmployeeID
 order by LastName
 """
-@app.get('/base_roster/users')
+@app.get('/base_roster/users') # pyright: ignore[reportArgumentType]
 def get_base_roster_users():
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_users)
             return cursor.fetchall()
@@ -34,10 +25,10 @@ order by ShiftName
 """
 @app.get('/base_roster/shifts')
 def get_base_roster_shifts():
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_shifts)
-            return [shift for shift, in cursor.fetchall()]
+            return [shift for shift, in cursor] # pyright: ignore[reportGeneralTypeIssues]
 
 base_roster_query_user = r"""
 select DayNum as day, ShiftName as shift
@@ -50,10 +41,10 @@ order by DayNum, StartTime
 """
 @app.get('/base_roster/user/<string:user_code>')
 def get_base_roster_user(user_code: str):
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_user, user_code)
-            return {str(day):[shift for _, shift in shifts] for day, shifts in groupby(cursor.fetchall(), lambda x: x[0])}
+            return {str(day):[shift for _, shift in shifts] for day, shifts in groupby(cursor, lambda x: x[0])} # pyright: ignore[reportOptionalSubscript, reportGeneralTypeIssues]
 
 base_roster_query_shift = r"""
 select DayNum as day,
@@ -68,10 +59,10 @@ order by DayNum, Employee.LastName
 """
 @app.get('/base_roster/shift/<string:shift_name>')
 def get_base_roster_shift(shift_name: str):
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(base_roster_query_shift, shift_name)
-            return {str(day):[(user_code, first_name, last_name) for _, user_code, first_name, last_name in users] for day, users in groupby(cursor.fetchall(), lambda x: x[0])}
+            return {str(day):[(user_code, first_name, last_name) for _, user_code, first_name, last_name in users] for day, users in groupby(cursor.fetchall(), lambda x: x[0])} # pyright: ignore[reportCallIssue, reportArgumentType]
 
 requests_query_users = r"""
 select
@@ -85,9 +76,9 @@ group by EmployeeID) R
 join Employee E on R.EmployeeID=E.EmployeeID
 order by LastName
 """
-@app.get('/requests/users')
+@app.get('/requests/users') # pyright: ignore[reportArgumentType]
 def get_requests_users():
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(requests_query_users)
             return cursor.fetchall()
@@ -103,10 +94,10 @@ order by ShiftName
 """
 @app.get('/requests/shifts')
 def get_requests_shifts():
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(requests_query_shifts)
-            return [shift for shift, in cursor.fetchall()]
+            return [shift for shift, in cursor] # pyright: ignore[reportGeneralTypeIssues]
 
 requests_query_user = r"""
 select
@@ -135,9 +126,9 @@ where Employee.Abbr=%s
 and StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
 order by StartDate, R.StartTime
 """
-@app.get('/requests/user/<string:user_code>')
+@app.get('/requests/user/<string:user_code>') # pyright: ignore[reportArgumentType]
 def get_requests_user(user_code: str):
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(requests_query_user, user_code)
             return cursor.fetchall()
@@ -171,9 +162,9 @@ where Shift.ShiftName=%s
 and StartDate >= year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP)
 order by StartDate, R.StartTime
 """
-@app.get('/requests/shift/<string:user_code>')
+@app.get('/requests/shift/<string:user_code>') # pyright: ignore[reportArgumentType]
 def get_requests_shift(user_code: str):
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(requests_query_shift, user_code)
             return cursor.fetchall()
@@ -196,7 +187,7 @@ def get_calendar_all():
     finish = request.args.get('finish', start, type=int)
     user = request.args.get('user', None, type=str)
     shift = request.args.get('shift', None, type=int)
-    with connection() as conn:
+    with phy_sch_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(calendar_query, (start, finish, user, user, shift, shift))
             users={}
@@ -204,7 +195,7 @@ def get_calendar_all():
             dates=set()
             current_shift_id = None
             current_shift_assignments = None
-            for date_int, shift_id, shift_name, user_code, first_name, last_name in cursor:
+            for date_int, shift_id, shift_name, user_code, first_name, last_name in cursor: # pyright: ignore[reportGeneralTypeIssues]
                 dates.add(date_int)
                 if user_code not in users:
                     users[user_code]=(first_name, last_name)
@@ -213,7 +204,7 @@ def get_calendar_all():
                     current_shift_assignments = (shift_id, shift_name, {})
                     shifts.append(current_shift_assignments)
                 date_str = str(date_int)
-                if date_str not in (shift_dict := current_shift_assignments[2]):
+                if date_str not in (shift_dict := current_shift_assignments[2]): # pyright: ignore[reportOptionalSubscript]
                     shift_dict[date_str]=[user_code]
                 else:
                     shift_dict[date_str].append(user_code)

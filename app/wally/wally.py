@@ -1,12 +1,11 @@
-from app import app, TZ
-from comrad import pool as comrad_pool
-from coolify import pool as coolify_pool
-from physician_scheduler import connection as phys_sched_connection
+from typing import LiteralString
+from . import app, TZ
+from ..database import local_pool, comrad_pool, phy_sch_connection
 from psycopg.rows import dict_row
-from flask import render_template
+from quart import render_template
 from datetime import datetime
 
-users_query = r"""
+users_query: LiteralString = r"""
 with
     filtered_users as (select *, extract(epoch from ps360_last_event_timestamp)::int as ps360_last_event_posix from users where show_in_locator and pacs_presence <> 'Offline'),
     windows_logons as (select ris, key as windows_computer, value::int as windows_logon, row_number() over (partition by ris order by value::int desc) ranked_order from filtered_users, jsonb_each(windows_logons)),
@@ -40,7 +39,7 @@ left join desks on desks.computer_name = combined_data.computer
 order by last_name, first_name
 """
 
-ris_query = r"""
+ris_query: LiteralString = r"""
 with earliest_triage_serial as (select rfe_serial
                                 from case_referral_exam
                                 where rfe_dor <= now() at time zone 'Pacific/Auckland' - '24 hours'::interval
@@ -64,7 +63,7 @@ from staff
     where st_user_code = any(%s)
 """
 
-phys_sched_query = r"""
+phys_sched_query: LiteralString = r"""
 declare
     @today int = year(CURRENT_TIMESTAMP) * 10000 + month(CURRENT_TIMESTAMP) * 100 + day(CURRENT_TIMESTAMP),
     @current_time int = 100 * DATEPART(hour, CURRENT_TIMESTAMP) + DATEPART(minute, CURRENT_TIMESTAMP)
@@ -80,7 +79,7 @@ where AssignDate = @today and Employee.Abbr = %s
 order by Shift.StartTime, Shift.EndTime, Shift.DisplayOrder, Shift.ShiftName, Shift.ShiftID
 """
 
-available_desks_query = r"""
+available_desks_query: LiteralString = r"""
 with windows_logons as (
     select
         key as computer_name,
@@ -102,25 +101,25 @@ order by sort_order
 """
 
 @app.get('/wally_data')
-def wally_data():
-    with coolify_pool.connection() as coolify_conn:
-        with coolify_conn.cursor(row_factory=dict_row) as coolify_cur:
-            coolify_cur.execute(users_query, prepare=True) # type: ignore
+async def wally_data():
+    async with local_pool.connection() as coolify_conn:
+        async with coolify_conn.cursor(row_factory=dict_row) as coolify_cur:
+            await coolify_cur.execute(users_query, prepare=True)
             online_users = {}
-            with phys_sched_connection() as phys_sched_conn:
+            with phy_sch_connection() as phys_sched_conn:
                 with phys_sched_conn.cursor(as_dict=True) as phys_sched_cur:
-                    for user in coolify_cur:
+                    async for user in coolify_cur:
                         phys_sched_cur.execute(phys_sched_query, (user["physch"],))
                         user["roster"] = phys_sched_cur.fetchall()
                         online_users[user.pop("ris")] = user
-            coolify_cur.execute(available_desks_query, prepare=True) # type: ignore
-            available_desks = coolify_cur.fetchall()
-    with comrad_pool.connection() as conn:
-        with conn.execute(ris_query, ([ris for ris in online_users.keys()],), prepare=True) as cur: # type: ignore
+            await coolify_cur.execute(available_desks_query, prepare=True)
+            available_desks = await coolify_cur.fetchall()
+    async with comrad_pool.connection() as conn:
+        async with await conn.execute(ris_query, ([ris for ris in online_users.keys()],), prepare=True) as cur:
             ris_data = {ris:dict(
                 last_report=last_report,
                 last_triage=last_triage,
-            ) for ris, last_report, last_triage in cur}
+            ) async for ris, last_report, last_triage in cur}
     for ris, user in online_users.items():
         user.update(ris_data[ris])
         timestamps = [timestamp for timestamp in (
@@ -170,9 +169,9 @@ app.jinja_env.filters['presence_icon'] = presence_icon
 app.jinja_env.filters['presence_icon_class'] = presence_icon_class
 
 @app.get('/wally')
-def wally():
-    return render_template('wally.html')
+async def wally():
+    return await render_template('wally.html')
 
 @app.get('/locator-data')
-def locator():
-    return render_template('locator-data.html', data=wally_data())
+async def locator():
+    return await render_template('locator-data.html', data = await wally_data())

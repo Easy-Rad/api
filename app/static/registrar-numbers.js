@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fromDateInput = document.getElementById('fromDate');
     const toDateInput = document.getElementById('toDate');
     const summaryContainer = document.getElementById('summaryContainer');
+    const summaryText = document.getElementById('summaryText');
     const summaryContent = document.getElementById('summaryContent');
     const dataContainer = document.getElementById('dataContainer');
     const dataContent = document.getElementById('dataContent');
@@ -23,11 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
     const day = String(today.getDate()).padStart(2, '0');
     const formattedDate = `${year}-${month}-${day}`;
-    toDateInput.value = formattedDate
-
-    // Setup for testing
-    userSelect.value = 'CARM'
-    fromDateInput.value = '2025-09-20'
+    fromDateInput.value = toDateInput.value = formattedDate
 
     /**
      * Displays a custom message box to the user.
@@ -66,7 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         stringValue = String(value)
                 }
                 // Handle potential commas in string values by wrapping them in quotes
-                // const stringValue = (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value);
                 return `"${stringValue.replace(/"/g, '""')}"`;
             });
             csvRows.push(values.join(','));
@@ -185,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     fetchButton.addEventListener('click', async () => {
+        const user = userSelect.selectedOptions[0].label
         const ris = userSelect.value;
         const fromDate = fromDateInput.value;
         const toDate = toDateInput.value;
@@ -217,17 +214,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Generate and display HTML content
             createResultsContent(data);
+            summaryText.textContent = `${user} (${fromDateInput.value} to ${toDateInput.value})`
             summaryContainer.classList.remove('hidden');
             dataContainer.classList.remove('hidden');
 
             // Prepare data for CSV download
             const csvString = convertToCSV(data);
             const csvBlob = new Blob([csvString], { type: 'text/csv' });
+            downloadCsvLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.csv`
             downloadCsvLink.href = URL.createObjectURL(csvBlob);
 
             // Prepare data for JSON download
             const jsonString = JSON.stringify(data, null, 2);
             const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+            downloadJsonLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.json`
             downloadJsonLink.href = URL.createObjectURL(jsonBlob);
             
             downloadContainer.classList.remove('hidden');

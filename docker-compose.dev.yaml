@@ -1,0 +1,14 @@
+services:
+  api:
+    env_file: .env
+    build:
+      target: service_api
+    ports:
+      - "5000:5000"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./app
+          target: /app/app
+        - action: rebuild
+          path: ./requirements.txt

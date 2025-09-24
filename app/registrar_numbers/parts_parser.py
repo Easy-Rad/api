@@ -1,17 +1,18 @@
-import pathlib
+# Original author: https://github.com/Tubo
+
+import logging
 import re
 from pyparsing import FollowedBy, Keyword, Literal, OneOrMore, Optional, Or
 from yaml import CLoader, load
+from pathlib import Path
 
-class_file = pathlib.Path(__file__).parent / "data" / "classifications.yaml"
+yaml_path = Path(__file__).parent / "classifications.yaml"
 
-with class_file.open() as f:
+with open(yaml_path, 'r') as f:
     classifications = load(f, Loader=CLoader)
-
 
 # Pre-compile the regular expression for better performance
 CLEAN_RE = re.compile(r"[^\w\s_]")
-
 
 def clean(s):
     spaced = CLEAN_RE.sub(" ", s).split()
@@ -77,8 +78,9 @@ pattern.ignore(IGNORED)
 
 def split(text):
     text = clean(text)
-    result = pattern.searchString(text)
-    return result.asList()
+    result = pattern.search_string(text)
+    
+    return result.as_list()
 
 
 def calculate(list_of_parts):
@@ -91,6 +93,7 @@ LOOKUP_TABLE = {}
 def parse(text):
     if text in LOOKUP_TABLE:
         return LOOKUP_TABLE[text]
-    count = calculate(split(text))
+    count = max(1, calculate(split(text)))
     LOOKUP_TABLE[text] = count
+    logging.debug(f"Calculated body parts as {count} for '{text}'")
     return count
