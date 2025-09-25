@@ -80,23 +80,19 @@ order by Shift.StartTime, Shift.EndTime, Shift.DisplayOrder, Shift.ShiftName, Sh
 """
 
 available_desks_query: LiteralString = r"""
-with windows_logons as (
-    select
-        key as computer_name,
-        jsonb_object_agg(first_name || ' ' || last_name, value::int) AS users
-    from users, jsonb_each(windows_logons)
-    where pacs_presence = 'Offline'
-    group by computer_name
+with logged_on_users as (
+    select first_name || ' ' || last_name AS full_name, pacs_presence, key as computer_name, value as logon from users, jsonb_each(windows_logons)
 )
 select
     computer_name as computer,
     name as desk,
-    phone,
     online,
-    users
+    case count(full_name) when 0 then null else jsonb_object_agg_strict( coalesce(full_name,''), logon) end as users
 from desks
-    left join windows_logons using (computer_name)
+left join logged_on_users using (computer_name)
 where show_if_available
+group by name, computer_name, online, sort_order
+having bool_and(pacs_presence = 'Offline') is not false
 order by sort_order
 """
 
