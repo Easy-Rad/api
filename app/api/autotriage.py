@@ -98,8 +98,8 @@ async def post_autotriage():
                     result = await cur.fetchone()
             if result is not None:
                 code, exam, body_part, custom = result
-                if code == 'Q25' and (patient_age >= 80 or egfr is not None and egfr < 30):
-                    code = 'Q25T'  # Barium-tagged CT colonography
+                if code in ('Q25', 'Q25C') and (patient_age >= 80 or egfr is not None and egfr < 30):
+                    code = 'Q25TC' if code == 'Q25C' else 'Q25T' # Barium-tagged CT colonography
                 result = dict(
                     body_part=body_part,
                     code=code,
