@@ -5,7 +5,7 @@ from quart import request, render_template, Response
 from os import environ
 import httpx
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, time
 from lxml import html, etree # pyright: ignore[reportAttributeAccessIssue]
 from psycopg.types.json import Jsonb
 import logging
@@ -43,10 +43,9 @@ async def fetch_registrar_numbers():
     return Response(df.to_json(orient='records'), mimetype='application/json')
 
 @dataclass
-class AuditEntry:
+class Impression:
     accession: str
-    timestamp: float
-    is_impression: bool
+    timestamp: datetime
 
 @dataclass
 class User:
@@ -54,7 +53,14 @@ class User:
     ris: str
     fromDate: date
     toDate: date
-    audit_data: dict[str,AuditEntry] = field(default_factory=dict)
+
+SAVE_AUDIT = r"""
+insert into registrar_impressions (uid, user_pacs, accession, added)
+values (%s, %s, %s, %s)
+on conflict (user_pacs, uid, accession)
+do update set added = excluded.added
+where registrar_impressions.added > excluded.added
+"""
 
 DB_QUERY = r"""
 with events as (
@@ -143,68 +149,91 @@ class InteleBrowserClient(httpx.AsyncClient):
         await super().__aexit__(exc_type, exc_value, traceback)
 
     async def process_user(self, user: User) -> pd.DataFrame:
-        await self.fetch_impressions(user)
-        return await self.fetch_ris_data(user)
+        impressions = await self.fetch_impressions(user)
+        return await self.fetch_ris_data(user, impressions)
 
-    async def fetch_impressions(self, user: User) -> None:
-        start_date = user.fromDate.strftime("%Y/%m/%d")
-        end_date = user.toDate.strftime("%Y/%m/%d")
-        response = await self.post(
-            self.APP_URL,
-            data={
-                "service": "direct/1/AuditDetails/$Form",
-                "sp": "S0",
-                "Form0": "usernameFilter,$PropertySelection,patientIdFilter,studyDescriptionFilter,$PropertySelection$0,$Checkbox,$Checkbox$0,$Checkbox$1,$Checkbox$2,$Checkbox$3,$Checkbox$4,$Checkbox$5,$Checkbox$6,$Checkbox$7,$Checkbox$8,$Checkbox$9,$Checkbox$10,$Checkbox$11,$Checkbox$12,$Checkbox$13,$Checkbox$14,$Checkbox$15,$Checkbox$16,$Checkbox$17,$Checkbox$18,$Checkbox$19,$Checkbox$20,$Checkbox$21,$Checkbox$22,$Checkbox$23,$Checkbox$24,$Checkbox$25,$Checkbox$26,$Checkbox$27,$Checkbox$28,$Checkbox$29,$Checkbox$30,$Checkbox$31,$Checkbox$32,$Checkbox$33,$Checkbox$34,$Checkbox$35,$Checkbox$36,$Checkbox$37,$Checkbox$38,$Checkbox$39,$Checkbox$40,$Checkbox$41,$Checkbox$42,$Submit",
-                "usernameFilter": user.pacs,
-                "$PropertySelection": "anyRole",
-                "patientIdFilter": "",
-                "studyDescriptionFilter": "",
-                "$PropertySelection$0": f"{start_date}:{end_date}",
-                "$Checkbox$2": "on",  # Add Emergency Impression
-                "$Checkbox$9": "on",  # Complete Dictation
-                "$Submit": "Update",
-            },
-        )
-        page_count = 0
-        while True:
-            root = html.fromstring(response.text)
-            # await asyncio.gather(*(self.add_accession(accessions, uid) for e in root.iterfind(".//a[@studyuid]") if (uid := e.attrib['studyuid'])))
-            for a in root.xpath("//a[@studyuid!=''][@actiontype][@date]"):
-                uid = a.attrib['studyuid']
-                is_impression = a.attrib['actiontype'] == 'AddEmergencyImpression'
-                timestamp = datetime.fromisoformat(a.attrib['date']).replace(tzinfo=TZ).timestamp()
-                try:
-                    audit_data = user.audit_data[uid]
-                    if (audit_data.is_impression and not is_impression) or (audit_data.is_impression == is_impression and timestamp < audit_data.timestamp):
-                        audit_data.timestamp = timestamp
-                    audit_data.is_impression &= is_impression
-                except KeyError:
-                    extra_response = await self.get(
-                        self.APP_URL,
-                        params={"service": "xtile/null/AuditDetails/$XTile$2", "sp": uid},
+    async def fetch_impressions(self, user: User) -> list[Impression]:
+        today = datetime.now(tz=TZ).date()
+        async with local_pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(r"""select added from registrar_impressions where user_pacs = %s order by added desc limit 1""", [user.pacs])
+                if (row := await cur.fetchone()) is not None:
+                    last_database_timestamp: datetime = row[0]
+                    scrape_from_date = last_database_timestamp.astimezone(tz=TZ).date()
+                else:
+                    scrape_from_date = today.replace(year=today.year - 10)
+                logging.info(f"Scraping audit data for {user.pacs} from {scrape_from_date} to {today}")
+                response = await self.post(
+                    self.APP_URL,
+                    data={
+                        "service": "direct/1/AuditDetails/$Form",
+                        "sp": "S0",
+                        "Form0": "usernameFilter,$PropertySelection,patientIdFilter,studyDescriptionFilter,$PropertySelection$0,$Checkbox,$Checkbox$0,$Checkbox$1,$Checkbox$2,$Checkbox$3,$Checkbox$4,$Checkbox$5,$Checkbox$6,$Checkbox$7,$Checkbox$8,$Checkbox$9,$Checkbox$10,$Checkbox$11,$Checkbox$12,$Checkbox$13,$Checkbox$14,$Checkbox$15,$Checkbox$16,$Checkbox$17,$Checkbox$18,$Checkbox$19,$Checkbox$20,$Checkbox$21,$Checkbox$22,$Checkbox$23,$Checkbox$24,$Checkbox$25,$Checkbox$26,$Checkbox$27,$Checkbox$28,$Checkbox$29,$Checkbox$30,$Checkbox$31,$Checkbox$32,$Checkbox$33,$Checkbox$34,$Checkbox$35,$Checkbox$36,$Checkbox$37,$Checkbox$38,$Checkbox$39,$Checkbox$40,$Checkbox$41,$Checkbox$42,$Submit",
+                        "usernameFilter": user.pacs,
+                        "$PropertySelection": "anyRole",
+                        "patientIdFilter": "",
+                        "studyDescriptionFilter": "",
+                        "$PropertySelection$0": f'{scrape_from_date.strftime("%Y/%m/%d")}:{today.strftime("%Y/%m/%d")}',
+                        "$Checkbox$2": "on",  # Add Emergency Impression
+                        # "$Checkbox$9": "on",  # Complete Dictation
+                        "$Submit": "Update",
+                    },
+                )
+                page_count = 0
+                scraped_count = 0
+                update_count = 0
+                while True:
+                    root = html.fromstring(response.text)
+                    for a in root.xpath("//a[@studyuid!=''][@actiontype][@date]"):
+                        uid = a.attrib['studyuid']
+                        timestamp = datetime.fromisoformat(a.attrib['date']).replace(tzinfo=TZ)
+                        # is_impression = a.attrib['actiontype'] == 'AddEmergencyImpression' # todo remove
+                        await cur.execute(r"""select accession from registrar_impressions where uid = %s limit 1""", [uid], prepare=True)
+                        if (row := await cur.fetchone()) is not None:
+                            accession, = row
+                            logging.debug(f"Fetched accession from database: {accession}")
+                        else:
+                            extra_response = await self.get(
+                                self.APP_URL,
+                                params={"service": "xtile/null/AuditDetails/$XTile$2", "sp": uid},
+                            )
+                            extra_root = etree.fromstring(extra_response.content)
+                            if (accession_node := extra_root.find("./sp[2]")) is not None:
+                                accession = accession_node.text
+                                logging.debug(f"Fetched accession from internet: {accession}")
+                                scraped_count += 1
+                            else:
+                                logging.error(f'Error fetching accession for uid: {uid}')
+                                continue
+                        await cur.execute(r"""
+                            insert into registrar_impressions (uid, user_pacs, accession, added)
+                            values (%s, %s, %s, %s)
+                            on conflict (user_pacs, uid, accession)
+                            do update set added = excluded.added
+                            where registrar_impressions.added > excluded.added
+                            """, [uid, user.pacs, accession, timestamp], prepare=True)
+                        if cur.rowcount > 0:
+                            logging.debug(f"Updated database for {accession}")
+                            update_count += cur.rowcount
+                    if root.find(".//a[@name='nextPage']") is None:
+                        logging.info(f"Scraped {page_count + 1} InteleBrowser audit pages and got {scraped_count} accessions ({update_count} database updates)")
+                        break
+                    logging.info(f"Processed page {page_count + 1}, fetching next page (total {scraped_count} accessions, {update_count} database updates)")
+                    response = await self.post(
+                        f"http://{IB_HOST}/InteleBrowser/app",
+                        params={'service':'direct/1/AuditDetails/auditDetailsTable.customPaginationControlTop.nextPage'},
                     )
-                    extra_root = etree.fromstring(extra_response.content)
-                    if (accession_node := extra_root.find("./sp[2]")) is not None:
-                        user.audit_data[uid] = AuditEntry(accession_node.text, timestamp, is_impression)
-                    else:
-                        logging.error(f'No response for uid: {uid}')
-            if root.find(".//a[@name='nextPage']") is None:
-                logging.info(f"Scraped {page_count + 1} InteleBrowser audit pages and got {len(user.audit_data)} accessions")
-                break
-            logging.info(f"Processed page {page_count + 1}, fetching next page (total {len(user.audit_data)} accessions)")
-            response = await self.post(
-                f"http://{IB_HOST}/InteleBrowser/app",
-                params={'service':'direct/1/AuditDetails/auditDetailsTable.customPaginationControlTop.nextPage'},
-            )
-            page_count += 1
+                    page_count += 1
+                await cur.execute(r"""select accession, added from registrar_impressions where user_pacs = %s and added between %s and %s order by added""", [user.pacs, datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(user.toDate, time.max, tzinfo=TZ)])
+                return [Impression(accession, added) for accession, added in await cur.fetchall()]
 
-    async def fetch_ris_data(self, user: User) -> pd.DataFrame:
+    async def fetch_ris_data(self, user: User, impressions: list[Impression]) -> pd.DataFrame:
         async with comrad_pool.connection() as conn:
             async with await conn.execute(DB_QUERY, [
                 user.ris,
                 user.fromDate,
                 user.toDate,
-                Jsonb([(data.accession, data.timestamp, data.is_impression) for data in user.audit_data.values()]),
+                Jsonb([(impression.accession, impression.timestamp.timestamp(), True) for impression in impressions]),
             ]) as cur:
                 column_names = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
                 df = pd.DataFrame(await cur.fetchall(), columns=column_names)
@@ -217,3 +246,20 @@ class InteleBrowserClient(httpx.AsyncClient):
 @app.get('/lookup_table')
 async def get_lookup_table():
     return LOOKUP_TABLE
+
+@app.get('/scrape_all')
+async def scrape_all():
+    async with local_pool.connection() as conn:
+        async with await conn.execute(r"""select pacs, ris from users where starts_with(specialty, 'Registrar - Year ') and show_in_locator order by last_name""") as cur:
+            users = await cur.fetchall()
+    async with InteleBrowserClient(timeout=None) as client:
+        today = datetime.now(tz=TZ).date()
+        for pacs, ris in users:
+            await client.fetch_impressions(User(
+                pacs,
+                ris,
+                today,
+                today,
+            ))
+    logging.info(f"Scraping complete")
+    return 'Scraping complete'
