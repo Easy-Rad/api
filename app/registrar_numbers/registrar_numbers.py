@@ -43,9 +43,10 @@ async def fetch_registrar_numbers():
     return Response(df.to_json(orient='records'), mimetype='application/json')
 
 @dataclass
-class Impression:
+class Report:
     accession: str
     timestamp: datetime
+    overread: bool
 
 @dataclass
 class User:
@@ -53,14 +54,6 @@ class User:
     ris: str
     fromDate: date
     toDate: date
-
-SAVE_AUDIT = r"""
-insert into registrar_impressions (uid, user_pacs, accession, added)
-values (%s, %s, %s, %s)
-on conflict (user_pacs, uid, accession)
-do update set added = excluded.added
-where registrar_impressions.added > excluded.added
-"""
 
 DB_QUERY = r"""
 with events as (
@@ -79,7 +72,7 @@ with events as (
          select
              elements_array ->> 0 as or_accession_no,
              ((elements_array ->> 1)::double precision * 1000)::bigint as audit_timestamp,
-             (elements_array ->> 2)::boolean as is_impression
+             (elements_array ->> 2)::boolean as overread
          from jsonb_array_elements(%s) as elements_array
         --  from jsonb_array_elements('[["CA-19350057-MR", "2025-09-21T09:16:41.713000", false],["CA-19349781-CT", "2025-09-20T10:00:45.812000", true]]'::jsonb) as elements_array
      ),
@@ -87,7 +80,7 @@ with events as (
          select
              or_accession_no as accession,
              coalesce(ris_timestamp, audit_timestamp) as report_timestamp,
-             coalesce(ris_action, case when is_impression then 'Impression' else 'Prelim' end) as action
+             coalesce(ris_action, case when overread then 'Overread' else 'Impression' end) as action
          from events
                   join orders on or_event_serial = events.ct_ce_serial
                   full join audit_data using (or_accession_no)
@@ -152,11 +145,11 @@ class InteleBrowserClient(httpx.AsyncClient):
         impressions = await self.fetch_impressions(user)
         return await self.fetch_ris_data(user, impressions)
 
-    async def fetch_impressions(self, user: User) -> list[Impression]:
+    async def fetch_impressions(self, user: User) -> list[Report]:
         today = datetime.now(tz=TZ).date()
         async with local_pool.connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(r"""select added from registrar_impressions where user_pacs = %s order by added desc limit 1""", [user.pacs])
+                await cur.execute(r"""select impression from registrar_numbers where user_pacs = %s and impression is not null order by impression desc limit 1""", [user.pacs])
                 if (row := await cur.fetchone()) is not None:
                     last_database_timestamp: datetime = row[0]
                     scrape_from_date = last_database_timestamp.astimezone(tz=TZ).date()
@@ -188,7 +181,7 @@ class InteleBrowserClient(httpx.AsyncClient):
                         uid = a.attrib['studyuid']
                         timestamp = datetime.fromisoformat(a.attrib['date']).replace(tzinfo=TZ)
                         # is_impression = a.attrib['actiontype'] == 'AddEmergencyImpression' # todo remove
-                        await cur.execute(r"""select accession from registrar_impressions where uid = %s limit 1""", [uid], prepare=True)
+                        await cur.execute(r"""select accession from registrar_numbers_accessions where pacs_audit_uid = %s""", [uid], prepare=True)
                         if (row := await cur.fetchone()) is not None:
                             accession, = row
                             logging.debug(f"Fetched accession from database: {accession}")
@@ -201,17 +194,18 @@ class InteleBrowserClient(httpx.AsyncClient):
                             if (accession_node := extra_root.find("./sp[2]")) is not None:
                                 accession = accession_node.text
                                 logging.debug(f"Fetched accession from internet: {accession}")
+                                await cur.execute(r"""insert into registrar_numbers_accessions (accession, pacs_audit_uid) values (%s, %s)""", [accession, uid], prepare=True)
                                 scraped_count += 1
                             else:
                                 logging.error(f'Error fetching accession for uid: {uid}')
                                 continue
                         await cur.execute(r"""
-                            insert into registrar_impressions (uid, user_pacs, accession, added)
-                            values (%s, %s, %s, %s)
-                            on conflict (user_pacs, uid, accession)
-                            do update set added = excluded.added
-                            where registrar_impressions.added > excluded.added
-                            """, [uid, user.pacs, accession, timestamp], prepare=True)
+                            insert into registrar_numbers (user_pacs, accession, impression)
+                            values (%s, %s, %s)
+                            on conflict (user_pacs, accession)
+                            do update set impression = excluded.impression
+                            where registrar_numbers.impression > excluded.impression
+                            """, [user.pacs, accession, timestamp], prepare=True)
                         if cur.rowcount > 0:
                             logging.debug(f"Updated database for {accession}")
                             update_count += cur.rowcount
@@ -224,16 +218,25 @@ class InteleBrowserClient(httpx.AsyncClient):
                         params={'service':'direct/1/AuditDetails/auditDetailsTable.customPaginationControlTop.nextPage'},
                     )
                     page_count += 1
-                await cur.execute(r"""select accession, added from registrar_impressions where user_pacs = %s and added between %s and %s order by added""", [user.pacs, datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(user.toDate, time.max, tzinfo=TZ)])
-                return [Impression(accession, added) for accession, added in await cur.fetchall()]
+                await cur.execute(r"""
+                    select
+                    accession,
+                    coalesce(overread, impression) as added,
+                    overread is not null as overread
+                    from registrar_numbers
+                    where user_pacs = %s
+                    and coalesce(overread, impression) between %s and %s
+                    order by added
+                    """, [user.pacs, datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(user.toDate, time.max, tzinfo=TZ)])
+                return [Report(accession, timestamp, overread) for accession, timestamp, overread in await cur.fetchall()]
 
-    async def fetch_ris_data(self, user: User, impressions: list[Impression]) -> pd.DataFrame:
+    async def fetch_ris_data(self, user: User, reports: list[Report]) -> pd.DataFrame:
         async with comrad_pool.connection() as conn:
             async with await conn.execute(DB_QUERY, [
                 user.ris,
                 user.fromDate,
                 user.toDate,
-                Jsonb([(impression.accession, impression.timestamp.timestamp(), True) for impression in impressions]),
+                Jsonb([(report.accession, report.timestamp.timestamp(), report.overread) for report in reports]),
             ]) as cur:
                 column_names = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
                 df = pd.DataFrame(await cur.fetchall(), columns=column_names)
