@@ -10,3 +10,4 @@ pyparsing
 lxml
 pyyaml
 httpx
+zeep[async]
