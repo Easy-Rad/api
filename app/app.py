@@ -1,4 +1,5 @@
 import logging
+import pandas as pd
 from quart import Quart
 from flask_orjson import OrjsonProvider
 from zoneinfo import ZoneInfo
@@ -14,6 +15,13 @@ app.jinja_env.trim_blocks = True
 app.jinja_env.lstrip_blocks = True
 app.json = OrjsonProvider(app)
 app.json.option = None
+
+def custom_orjson_default(obj):
+    if isinstance(obj, pd.Timestamp):
+        return int(obj.timestamp()*1000)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+app.json.default = custom_orjson_default
 
 @app.before_serving
 async def create_db_pool():

@@ -3,11 +3,11 @@ import asyncio
 from psycopg import AsyncConnection
 from . import app, TZ
 from ..database import local_pool, comrad_pool, PS360
-from quart import request, render_template, Response
+from quart import request, render_template, jsonify
 
 from os import environ
 import httpx
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, date, time
 from lxml import html, etree # pyright: ignore[reportAttributeAccessIssue]
 from psycopg.types.json import Jsonb
@@ -27,6 +27,7 @@ async def get_registrar_numbers():
 
 @app.post('/registrar_numbers')
 async def fetch_registrar_numbers():
+    # with open(Path(__file__).parent.parent.parent / 'tmp' / 'data' / 'data.json', 'r') as f: return json.load(f)
     r = await request.get_json()
     ris = r["ris"]
     async with local_pool.connection() as conn:
@@ -44,8 +45,17 @@ async def fetch_registrar_numbers():
         )
         logging.info(f'Generating registrar numbers for {user.pacs} ({user.ris}) from {user.fromDate} to {user.toDate}')
         async with InteleBrowserClient(timeout=None) as client:        
-            df = await client.process_user(user, conn)
-    return Response(df.to_json(orient='records'), mimetype='application/json')
+            data = await client.process_user(user, conn)
+    if data is None: return jsonify(None)
+    report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
+    modality_pivot = data.pivot_table(index='modality',values='sum_of_parts', aggfunc=['count', 'sum'], margins=False).to_dict('split')
+    time_series = data[data['modality'].isin(('CT','MR','NM','XR'))].groupby('modality').resample(pd.tseries.offsets.Week(weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
+    chart_data = [dict(name=modality, data=list(series.items())) for modality, series in time_series.items()]
+    return dict(
+		report_data=report_data,
+		modality_pivot=modality_pivot,
+		chart_data=chart_data,
+	)
 
 @dataclass
 class Report:
@@ -65,7 +75,7 @@ DB_QUERY = r"""
 with events as (
     select distinct on (ct_ce_serial)
         ct_ce_serial,
-        (extract(epoch from ct_dor at time zone 'Pacific/Auckland') * 1000)::bigint as ris_timestamp,
+        ct_dor at time zone 'Pacific/Auckland' as ris_timestamp,
         case ct_staff_function when 'R' then 'Final' when 'V' then 'Prelim' end as ris_action
     from case_staff
              join staff on st_serial = ct_staff_serial
@@ -77,7 +87,7 @@ with events as (
      audit_data as (
          select
              elements_array ->> 0 as or_accession_no,
-             ((elements_array ->> 1)::double precision * 1000)::bigint as audit_timestamp,
+             to_timestamp((elements_array ->> 1)::double precision) as audit_timestamp,
              (elements_array ->> 2)::boolean as overread
          from jsonb_array_elements(%s) as elements_array
         --  from jsonb_array_elements('[["CA-19350057-MR", "2025-09-21T09:16:41.713000", false],["CA-19349781-CT", "2025-09-20T10:00:45.812000", true]]'::jsonb) as elements_array
@@ -98,7 +108,7 @@ select
     case when or_ex_type = 'OD' then 'XR' else or_ex_type end as modality,
     (select jsonb_agg(ex_description) from case_procedure join exams on cx_key = ex_serial and cx_key_type = 'X' where cx_ce_serial = ce_serial) as exams,
     ce_description as description,
-    (extract(epoch from ce_dor at time zone 'Pacific/Auckland') * 1000)::bigint as case_timestamp,
+    ce_dor at time zone 'Pacific/Auckland' as case_timestamp,
     extract(year from age(ce_dor, pa_dob))::int as age
 from accessions
          join orders on or_accession_no = accession and or_status != 'X'
@@ -147,9 +157,10 @@ class InteleBrowserClient(httpx.AsyncClient):
         )).raise_for_status()
         await super().__aexit__(exc_type, exc_value, traceback)
 
-    async def process_user(self, user: User, conn: AsyncConnection) -> pd.DataFrame:
+    async def process_user(self, user: User, conn: AsyncConnection) -> pd.DataFrame | None:
         async with PS360() as ps360:
             impressions = await self.fetch_impressions(user, conn, ps360)
+
         return await self.fetch_ris_data(user, impressions)
 
     async def fetch_impressions(self, user: User, conn: AsyncConnection, ps360: PS360) -> list[Report]:
@@ -281,7 +292,7 @@ class InteleBrowserClient(httpx.AsyncClient):
                 """, [user.pacs, _from, _to], prepare=True)
             return [Report(accession, timestamp, overread) for accession, timestamp, overread in await cur.fetchall()]
 
-    async def fetch_ris_data(self, user: User, reports: list[Report]) -> pd.DataFrame:
+    async def fetch_ris_data(self, user: User, reports: list[Report]) -> pd.DataFrame | None:
         async with comrad_pool.connection() as conn:
             async with await conn.execute(DB_QUERY, [
                 user.ris,
@@ -291,10 +302,12 @@ class InteleBrowserClient(httpx.AsyncClient):
             ]) as cur:
                 column_names = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
                 df = pd.DataFrame(await cur.fetchall(), columns=column_names)
-                logging.info(f"Retrieved {len(df)} orders from RIS database")
-                if len(df) > 0:
-                    df['sum_of_parts'] = df.apply(lambda row: max(parse(row['description']) if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1)
-                    logging.info(f"Parsing complete")
+                if df.empty:
+                    logging.info(f"No orders retrieved from RIS database")
+                    return None
+                logging.info(f"Retrieved {len(df)} orders from RIS database, parsing...")
+                df['sum_of_parts'] = df.apply(lambda row: max(parse(row['description']) if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1, result_type='reduce')
+                logging.info(f"Parsing complete")
                 return df
 
 @app.get('/lookup_table')
