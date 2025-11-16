@@ -231,6 +231,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const formattedDate = `${year}-${month}-${day}`;
     fromDateInput.value = toDateInput.value = formattedDate
 
+    userSelect.onchange = () => {
+        fromDateInput.value = userSelect.options[userSelect.selectedIndex].dataset.start;
+    }
+
     const showMessage = (message) => {
         messageText.textContent = message;
         messageBox.classList.remove('hidden');

@@ -166,8 +166,8 @@ app.jinja_env.filters['presence_icon_class'] = presence_icon_class
 
 @app.get('/wally')
 async def wally():
-    return await render_template('wally.html')
+    return await render_template('wally.jinja')
 
 @app.get('/locator-data')
 async def locator():
-    return await render_template('locator-data.html', data = await wally_data())
+    return await render_template('locator-data.jinja', data = await wally_data())

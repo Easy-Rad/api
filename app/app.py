@@ -42,4 +42,4 @@ async def health():
         comrad=comrad_pool.get_stats(),
     )
 
-from . import api, wally, registrar_numbers
+from . import api, wally, registrar_numbers, reports

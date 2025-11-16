@@ -4,6 +4,7 @@ module.exports = {
   mode: 'production',
   entry: {
     'registrar-numbers': './frontend/registrar-numbers.js',
+    'reports': './frontend/reports.js',
   },
   output: {
     filename: '[name].bundle.js',

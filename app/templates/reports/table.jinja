@@ -1,0 +1,32 @@
+{% extends "reports/layout.jinja" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h4 class="text-3xl font-bold text-gray-800 mb-4">{{ title }}</h4>
+{% if 'date' in params %}
+<input
+  type="date"
+  id="date"
+  value="{{ params['date']}}"
+  onchange="window.location.href = '?date=' + this.value"
+  />
+{% endif %}
+<table class="border-collapse border border-gray-400">
+    <caption>{{ rows|length }} results in {{ execution_time|round(4) }} seconds</caption>
+    <thead>
+        <tr>
+            {% for header in headers %}
+            <th class="px-2 py-1 border border-gray-300">{{ header }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            {% for header in headers %}
+            <td class="px-2 py-1 border border-gray-300">{{ row[header] }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

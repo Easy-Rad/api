@@ -1,6 +1,10 @@
 {
 	"scripts": {
-		"build": "webpack && tailwindcss -i frontend/registrar-numbers.css -o app/static/registrar-numbers.css -m"
+		"webpack:watch": "webpack --watch",
+		"webpack": "webpack",
+		"build:registrar-numbers": "tailwindcss -i frontend/registrar-numbers.css -o app/static/registrar-numbers.css -m",
+		"build:reports": "tailwindcss -i frontend/reports.css -o app/static/reports.css -m",
+		"build:all": "pnpm run build:registrar-numbers && pnpm run build:reports && pnpm run webpack"
 	},
 	"devDependencies": {
 		"@tailwindcss/cli": "^4.1.17",

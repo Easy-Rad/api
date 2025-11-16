@@ -22,8 +22,17 @@ IB_PASSWORD = environ['IB_PASSWORD']
 @app.get('/registrar_numbers')
 async def get_registrar_numbers():
     async with local_pool.connection() as conn:
-        async with await conn.execute(r"""select ris, last_name || ', ' || first_name || ' (' || replace(specialty, 'Registrar - Year ', 'Y') || ')' as name from users where starts_with(specialty, 'Registrar - Year ') and show_in_locator order by last_name""") as cur:
-            return await render_template('registrar-numbers.html', users = await cur.fetchall())
+        async with await conn.execute(r"""
+            select ris,
+            last_name || ', ' || first_name || ' (' || replace(specialty, 'Registrar - Year ', 'Y') || ')' as name,
+            registrar_start_date as start_date
+            from users 
+            where starts_with(specialty, 'Registrar - Year ')
+            and show_in_locator
+            and registrar_start_date is not null
+            order by last_name
+        """) as cur:
+            return await render_template('registrar-numbers.jinja', users = await cur.fetchall())
 
 @app.post('/registrar_numbers')
 async def fetch_registrar_numbers():

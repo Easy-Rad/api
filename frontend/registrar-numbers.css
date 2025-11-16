@@ -1,12 +1,16 @@
-/* static/src/input.css */
+
+@import "tailwindcss" source(none);
+@import "flowbite/src/themes/default";
+
+@plugin "flowbite/plugin";
+@source "../node_modules/flowbite";
+
+@source "../app/templates/registrar-numbers.jinja";
+@source "../frontend/registrar-numbers.js";
+
 .datatable-ascending::after {
     content: " ▲";
 }
 .datatable-descending::after {
     content: " ▼";
 }
-@import "tailwindcss";
-@import "flowbite/src/themes/default";
-@plugin "flowbite/plugin";
-@source not "../app/static";
-@source "../node_modules/flowbite";
