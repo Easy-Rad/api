@@ -1,6 +1,10 @@
 {% extends "reports/layout.jinja" %}
 {% block content %}
-  <h1>Index</h1>
-  <p class="important">
-    Welcome on my awesome homepage.
+<div class="w-48 text-sm font-medium text-heading bg-neutral-primary-soft border border-default rounded-base">
+  {% for link in links %}
+  <a href="{{ link[1] }}" aria-current="true" class="block w-full px-4 py-2 text-fg-brand bg-neutral-secondary-medium border-b border-default rounded-t-base cursor-pointer">
+      {{ link[0] }}
+  </a>
+  {% endfor %}
+</div>
 {% endblock %}

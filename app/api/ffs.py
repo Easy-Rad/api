@@ -3,13 +3,10 @@ from datetime import date, timedelta
 from quart import request
 from werkzeug.exceptions import BadRequest
 from psycopg.rows import dict_row
-import holidays
 
-from . import app
+from . import app, HOLIDAYS
 from ..database import comrad_pool, local_pool
 from .error import ApiError
-
-HOLIDAYS = holidays.country_holidays('NZ', subdiv='CAN')
 
 ffs_users: LiteralString = r"""
 with staff_list as (

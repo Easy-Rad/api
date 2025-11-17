@@ -3,9 +3,11 @@ import pandas as pd
 from quart import Quart
 from flask_orjson import OrjsonProvider
 from zoneinfo import ZoneInfo
+import holidays
 from .database import local_pool, comrad_pool
 
 TZ = ZoneInfo("Pacific/Auckland")
+HOLIDAYS = holidays.country_holidays('NZ', subdiv='CAN')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)-8s %(message)s')
 logging.getLogger("httpx").setLevel(logging.WARNING)

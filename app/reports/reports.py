@@ -1,21 +1,21 @@
-from . import app, TZ
+from . import app, TZ, HOLIDAYS
 from quart import request, render_template
 from ..database import comrad_pool
 from psycopg.abc import Query, Params
-from psycopg.rows import dict_row
 from datetime import date, datetime
 import time
 
-@app.get('/reports')
+@app.get('/reports/')
 async def get_reports():
-    return await render_template('reports/reports.jinja')
-
+    links: list[tuple[str, str]] = [
+        ('FFS reports', 'ffs'),
+    ]
+    return await render_template('reports/reports.jinja', links=links)
 
 async def get_table(title: str, query: Query, params: Params | None = None):
     start_time = time.perf_counter()
     async with comrad_pool.connection() as conn:
         async with await conn.execute(query, params) as cur:
-            cur.row_factory = dict_row
             headers = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
             rows = await cur.fetchall()
     return await render_template(
@@ -33,9 +33,11 @@ async def get_report_ffs():
         d = date.fromisoformat(request.args['date'])
     except:
         d = datetime.now(tz=TZ).date()
+    holiday = d in HOLIDAYS
     return await get_table('FFS reports', r'''
 select
     or_accession_no as "Accession",
+    case when or_ex_type = 'OD' then 'XR' else or_ex_type end as "Modality",
     ce_description as "Study description",
     initcap(st_surname) || ', ' || initcap(st_firstnames) as "Reporter",
     ct_dor as "Report timestamp",
@@ -49,8 +51,9 @@ from case_staff
     join orders on or_event_serial = ce_serial and or_status != 'X'
     join sel_table as site ON ce_site = site.sl_key AND site.sl_code = 'SIT'
 where ct_dor between %(date)s + '06:00:00'::time and %(date)s + '23:00:00'::time
-    and (extract(hour from ct_dor) not between 8 and 17 or extract(isodow from ct_dor) > 5)
-    and ct_staff_serial not in (3725, 8057, 7870)
+    and (extract(hour from ct_dor) not between 8 and 17 or extract(isodow from ct_dor) > 5 or %(holiday)s)
+    and or_ex_type IN ('CT', 'MR', 'US', 'XR', 'OD')
+    and ct_staff_serial not in (3725, 8057, 7870, 6692)
     and site.sl_aux1 = 'CDHB'
     and ce_site NOT IN ('HAN', 'KAIK')
-order by st_surname, ct_dor''', dict(date=d))
+order by st_surname, ct_dor''', dict(date=d, holiday=holiday))

@@ -22,8 +22,8 @@
     <tbody>
         {% for row in rows %}
         <tr>
-            {% for header in headers %}
-            <td class="px-2 py-1 border border-gray-300">{{ row[header] }}</td>
+            {% for cell in row %}
+            <td class="px-2 py-1 border border-gray-300">{{ cell }}</td>
             {% endfor %}
         </tr>
         {% endfor %}
