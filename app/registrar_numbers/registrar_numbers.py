@@ -1,9 +1,7 @@
-import asyncio
-
 from psycopg import AsyncConnection
 from . import app, TZ
 from ..database import local_pool, comrad_pool, PS360
-from quart import request, render_template, jsonify
+from quart import request, render_template, jsonify, websocket, has_websocket_context
 
 from os import environ
 import httpx
@@ -13,11 +11,58 @@ from lxml import html, etree # pyright: ignore[reportAttributeAccessIssue]
 from psycopg.types.json import Jsonb
 import logging
 import pandas as pd
-from .parts_parser import parse, LOOKUP_TABLE
+from .parts_parser import clean, parse_cleaned
 
 IB_HOST = environ.get('IB_HOST','app-inteleradha-p.healthhub.health.nz')
 IB_USER = environ['IB_USER']
 IB_PASSWORD = environ['IB_PASSWORD']
+
+RETRIEVE_STEPS = 5
+
+async def websocket_send_error(msg: str):
+    if has_websocket_context():
+        await websocket.send_json(type='error', msg=msg)
+
+async def websocket_send_update(msg: str, progress: float):
+    if has_websocket_context():
+        await websocket.send_json(type='update', msg=msg, percent=round(progress*100))
+
+async def websocket_send_result(result: dict | None):
+    if has_websocket_context():
+        await websocket.send_json(type='result', result=result)
+
+@app.websocket('/registrar_numbers')
+async def ws():
+    r = await websocket.receive_json()
+    ris = r["ris"]
+    async with local_pool.connection() as conn:
+        async with await conn.execute(r"""select pacs, case when can_overread then ps360 end as ps360 from users where ris = %s""", (ris,)) as cur:
+            if (u := await cur.fetchone()) is None:
+                await websocket_send_error(f'No PACS username found in database for RIS user: {ris}')
+                return
+        pacs, ps360 = u
+        user = User(
+            pacs,
+            ris,
+            ps360,
+            date.fromisoformat(r["fromDate"]),
+            date.fromisoformat(r["toDate"]),
+        )
+        await websocket_send_update(f'Generating registrar numbers for {user.pacs} ({user.ris}) from {user.fromDate} to {user.toDate}', 0)
+        async with InteleBrowserClient(timeout=None) as client:
+            data = await client.process_user(user, conn)
+    if data is None:
+        await websocket_send_result(data)
+        return
+    report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
+    modality_pivot = data.pivot_table(index='modality',values='sum_of_parts', aggfunc=['count', 'sum'], margins=False).to_dict('split')
+    time_series = data[data['modality'].isin(('CT','MR','NM','XR'))].groupby('modality').resample(pd.tseries.offsets.Week(weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
+    chart_data = [dict(name=modality, data=list(series.items())) for modality, series in time_series.items()]
+    await websocket_send_result(dict(
+		report_data=report_data,
+		modality_pivot=modality_pivot,
+		chart_data=chart_data,
+	))
 
 @app.get('/registrar_numbers')
 async def get_registrar_numbers():
@@ -34,37 +79,36 @@ async def get_registrar_numbers():
         """) as cur:
             return await render_template('registrar-numbers.jinja', users = await cur.fetchall())
 
-@app.post('/registrar_numbers')
-async def fetch_registrar_numbers():
-    # with open(Path(__file__).parent.parent.parent / 'tmp' / 'data' / 'data.json', 'r') as f: return json.load(f)
-    r = await request.get_json()
-    ris = r["ris"]
-    async with local_pool.connection() as conn:
-        async with await conn.execute(r"""select pacs, case when can_overread then ps360 end as ps360 from users where ris = %s""", (ris,)) as cur:
-            if (u := await cur.fetchone()) is None:
-                logging.error(f'No PACS username found in database for RIS user: {ris}')
-                return []
-        pacs, ps360 = u
-        user = User(
-            pacs,
-            ris,
-            ps360,
-            date.fromisoformat(r["fromDate"]),
-            date.fromisoformat(r["toDate"]),
-        )
-        logging.info(f'Generating registrar numbers for {user.pacs} ({user.ris}) from {user.fromDate} to {user.toDate}')
-        async with InteleBrowserClient(timeout=None) as client:        
-            data = await client.process_user(user, conn)
-    if data is None: return jsonify(None)
-    report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
-    modality_pivot = data.pivot_table(index='modality',values='sum_of_parts', aggfunc=['count', 'sum'], margins=False).to_dict('split')
-    time_series = data[data['modality'].isin(('CT','MR','NM','XR'))].groupby('modality').resample(pd.tseries.offsets.Week(weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
-    chart_data = [dict(name=modality, data=list(series.items())) for modality, series in time_series.items()]
-    return dict(
-		report_data=report_data,
-		modality_pivot=modality_pivot,
-		chart_data=chart_data,
-	)
+# @app.post('/registrar_numbers')
+# async def fetch_registrar_numbers():
+#     r = await request.get_json()
+#     ris = r["ris"]
+#     async with local_pool.connection() as conn:
+#         async with await conn.execute(r"""select pacs, case when can_overread then ps360 end as ps360 from users where ris = %s""", (ris,)) as cur:
+#             if (u := await cur.fetchone()) is None:
+#                 logging.error(f'No PACS username found in database for RIS user: {ris}')
+#                 return []
+#         pacs, ps360 = u
+#         user = User(
+#             pacs,
+#             ris,
+#             ps360,
+#             date.fromisoformat(r["fromDate"]),
+#             date.fromisoformat(r["toDate"]),
+#         )
+#         logging.info(f'Generating registrar numbers for {user.pacs} ({user.ris}) from {user.fromDate} to {user.toDate}')
+#         async with InteleBrowserClient(timeout=None) as client:        
+#             data = await client.process_user(user, conn)
+#     if data is None: return jsonify(None)
+#     report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
+#     modality_pivot = data.pivot_table(index='modality',values='sum_of_parts', aggfunc=['count', 'sum'], margins=False).to_dict('split')
+#     time_series = data[data['modality'].isin(('CT','MR','NM','XR'))].groupby('modality').resample(pd.tseries.offsets.Week(weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
+#     chart_data = [dict(name=modality, data=list(series.items())) for modality, series in time_series.items()]
+#     return dict(
+# 		report_data=report_data,
+# 		modality_pivot=modality_pivot,
+# 		chart_data=chart_data,
+# 	)
 
 @dataclass
 class Report:
@@ -99,7 +143,6 @@ with events as (
              to_timestamp((elements_array ->> 1)::double precision) as audit_timestamp,
              (elements_array ->> 2)::boolean as overread
          from jsonb_array_elements(%s) as elements_array
-        --  from jsonb_array_elements('[["CA-19350057-MR", "2025-09-21T09:16:41.713000", false],["CA-19349781-CT", "2025-09-20T10:00:45.812000", true]]'::jsonb) as elements_array
      ),
      accessions as (
          select
@@ -169,14 +212,14 @@ class InteleBrowserClient(httpx.AsyncClient):
     async def process_user(self, user: User, conn: AsyncConnection) -> pd.DataFrame | None:
         async with PS360() as ps360:
             impressions = await self.fetch_impressions(user, conn, ps360)
-
-        return await self.fetch_ris_data(user, impressions)
+        return await self.fetch_ris_data(user, impressions, conn)
 
     async def fetch_impressions(self, user: User, conn: AsyncConnection, ps360: PS360) -> list[Report]:
         _from, _to = datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(user.toDate, time.max, tzinfo=TZ)
         today = datetime.now(tz=TZ).date()
         async with conn.cursor() as cur:
             if user.ps360 is not None:
+                await websocket_send_update(f"Retrieving PS360 overread reports...", 1/RETRIEVE_STEPS)
                 await cur.execute(r"""
                     select overread from registrar_numbers
                     where user_pacs = %s and overread is not null
@@ -185,28 +228,25 @@ class InteleBrowserClient(httpx.AsyncClient):
                     """, [user.pacs], prepare=True)
                 scrape_from_datetime = datetime.combine(row[0].astimezone(tz=TZ).date() if (row := await cur.fetchone()) is not None else today.replace(year=today.year - 2), time.min, tzinfo=TZ)
                 scrape_to_datetime = datetime.combine(today, time.max, tzinfo=TZ)
-                async with asyncio.TaskGroup() as tg:
-                    async def get_report(reportId: int, accession: str):
-                        if (overread := await ps360.get_overread(reportId)) is not None:
-                            await cur.execute(r"""
-                                insert into registrar_numbers_accessions (accession, ps360_report_id) values (%s, %s)
-                                on conflict (accession)
-                                do update set ps360_report_id = excluded.ps360_report_id
-                                where registrar_numbers_accessions.ps360_report_id is null
-                                """, [accession, reportId], prepare=True)
-                            await cur.execute(r"""
-                                insert into registrar_numbers (user_pacs, accession, overread)
-                                values (%s, %s, %s)
-                                on conflict (user_pacs, accession)
-                                do update set overread = excluded.overread
-                                where registrar_numbers.overread is null
-                                or registrar_numbers.overread > excluded.overread
-                                """, [user.pacs, accession, overread], prepare=True)
-                            if cur.rowcount > 0:
-                                logging.debug(f'{user.pacs} overread {accession} at {overread}')
-                    logging.info(f"Scraping PS360 overread data for {user.pacs} from {scrape_from_datetime} to {scrape_to_datetime}")
-                    async for reportId, accession in ps360.orders(user.ps360, scrape_from_datetime, scrape_to_datetime):
-                        tg.create_task(get_report(reportId, accession))
+                logging.info(f"Retrieving PS360 overread reports for {user.pacs} from {scrape_from_datetime} to {scrape_to_datetime}")
+                async for reportId, accession in ps360.orders(user.ps360, scrape_from_datetime, scrape_to_datetime):
+                    if (overread := await ps360.get_overread(reportId)) is not None:
+                        await cur.execute(r"""
+                            insert into registrar_numbers_accessions (accession, ps360_report_id) values (%s, %s)
+                            on conflict (accession)
+                            do update set ps360_report_id = excluded.ps360_report_id
+                            where registrar_numbers_accessions.ps360_report_id is null
+                            """, [accession, reportId], prepare=True)
+                        await cur.execute(r"""
+                            insert into registrar_numbers (user_pacs, accession, overread)
+                            values (%s, %s, %s)
+                            on conflict (user_pacs, accession)
+                            do update set overread = excluded.overread
+                            where registrar_numbers.overread is null
+                            or registrar_numbers.overread > excluded.overread
+                            """, [user.pacs, accession, overread], prepare=True)
+                        if cur.rowcount > 0:
+                            logging.debug(f'{user.pacs} overread {accession} at {overread}')
             await cur.execute(r"""
                 select impression from registrar_numbers
                 where user_pacs = %s and impression is not null
@@ -218,7 +258,8 @@ class InteleBrowserClient(httpx.AsyncClient):
                 scrape_from_date = last_database_timestamp.astimezone(tz=TZ).date()
             else:
                 scrape_from_date = today.replace(year=today.year - 10)
-            logging.info(f"Scraping impressions data for {user.pacs} from {scrape_from_date} to {today}")
+            logging.info(f"Retrieving impressions data for {user.pacs} from {scrape_from_date} to {today}")
+            await websocket_send_update(f"Retrieving impressions...", 2/RETRIEVE_STEPS)
             response = await self.post(
                 self.APP_URL,
                 data={
@@ -301,9 +342,11 @@ class InteleBrowserClient(httpx.AsyncClient):
                 """, [user.pacs, _from, _to], prepare=True)
             return [Report(accession, timestamp, overread) for accession, timestamp, overread in await cur.fetchall()]
 
-    async def fetch_ris_data(self, user: User, reports: list[Report]) -> pd.DataFrame | None:
-        async with comrad_pool.connection() as conn:
-            async with await conn.execute(DB_QUERY, [
+    async def fetch_ris_data(self, user: User, reports: list[Report], conn: AsyncConnection) -> pd.DataFrame | None:
+        logging.info(f"Retrieving RIS orders for {user.ris} from {user.fromDate} to {user.toDate}")
+        await websocket_send_update(f"Retrieving reports from RIS...", 3/RETRIEVE_STEPS)
+        async with comrad_pool.connection() as comrad_conn:
+            async with await comrad_conn.execute(DB_QUERY, [
                 user.ris,
                 user.fromDate,
                 user.toDate,
@@ -311,37 +354,37 @@ class InteleBrowserClient(httpx.AsyncClient):
             ]) as cur:
                 column_names = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
                 df = pd.DataFrame(await cur.fetchall(), columns=column_names)
-                if df.empty:
-                    logging.info(f"No orders retrieved from RIS database")
-                    return None
-                logging.info(f"Retrieved {len(df)} orders from RIS database, parsing...")
-                df['sum_of_parts'] = df.apply(lambda row: max(parse(row['description']) if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1, result_type='reduce')
-                logging.info(f"Parsing complete")
-                return df
-
-@app.get('/lookup_table')
-async def get_lookup_table():
-    return LOOKUP_TABLE
-
-@app.get('/scrape_all')
-async def scrape_all():
-    async with local_pool.connection() as conn:
-        async with await conn.execute(r"""
-            select pacs, ris, case when can_overread then ps360 end as ps360 from users
-            where starts_with(specialty, 'Registrar - Year ')
-            and show_in_locator
-            order by last_name
-            """) as cur:
-            users = await cur.fetchall()
-        async with InteleBrowserClient(timeout=None) as client, PS360() as ps360:
-            today = datetime.now(tz=TZ).date()
-            for pacs, ris, ps360_id in users:
-                await client.fetch_impressions(User(
-                    pacs,
-                    ris,
-                    ps360_id,
-                    today,
-                    today,
-                ), conn, ps360)
-    logging.info(f"Scraping complete")
-    return 'Scraping complete'
+        if df.empty:
+            logging.info(f"No orders retrieved from RIS database")
+            return None
+        logging.info(f"Retrieved {len(df)} reports from RIS, calculating sum of parts")
+        await websocket_send_update(f"Retrieved {len(df)} reports, calculating sum of parts...", 4/RETRIEVE_STEPS)
+        xr_modality_condition = df['modality'] == 'XR'
+        df.loc[xr_modality_condition, 'description'] = df.loc[xr_modality_condition, 'description'].apply(clean)
+        xr_descriptions = df[xr_modality_condition]['description'].unique()
+        xr_exam_parts: dict[str, int] = {}
+        if len(xr_descriptions):
+            async with conn.cursor() as cur:
+                await cur.execute(r"""
+                    select value as description, exam_parts
+                    from jsonb_array_elements_text(%s)
+                    left join registrar_numbers_exam_parts on value=description""", [
+                    Jsonb(xr_descriptions.tolist()),
+                ])
+                newly_parsed: set[str] = set()
+                for description, exam_parts in await cur.fetchall():
+                    if exam_parts is None:
+                        exam_parts = parse_cleaned(description)
+                        newly_parsed.add(description)
+                    xr_exam_parts[description] = exam_parts
+                if len(newly_parsed):
+                    await cur.executemany(r"""
+                        insert into registrar_numbers_exam_parts (description, exam_parts)
+                        values (%s, %s)
+                        on conflict (description) do update
+                        set exam_parts = excluded.exam_parts
+                        """, ((description, xr_exam_parts[description]) for description in newly_parsed))
+                    logging.info(f"Updated exam_parts database with {cur.rowcount} newly parsed exam descriptions")
+        df['sum_of_parts'] = df.apply(lambda row: max(xr_exam_parts[row['description']] if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1, result_type='reduce')
+        logging.info(f"Parsing complete")
+        return df

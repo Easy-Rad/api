@@ -76,24 +76,14 @@ pattern = MIDLINES ^ SPINE ^ PERIPHERIES
 pattern.ignore(IGNORED)
 
 
-def split(text):
-    text = clean(text)
-    result = pattern.search_string(text)
-    
+def split(cleaned_text):
+    result = pattern.search_string(cleaned_text)
     return result.as_list()
-
 
 def calculate(list_of_parts):
     return sum(sum(i) for i in list_of_parts)
 
-
-LOOKUP_TABLE = {}
-
-
-def parse(text):
-    if text in LOOKUP_TABLE:
-        return LOOKUP_TABLE[text]
-    count = max(1, calculate(split(text)))
-    LOOKUP_TABLE[text] = count
-    logging.debug(f"Calculated body parts as {count} for '{text}'")
+def parse_cleaned(cleaned_text):
+    count = max(1, calculate(split(cleaned_text)))
+    logging.debug(f"Calculated body parts as {count} for '{cleaned_text}'")
     return count

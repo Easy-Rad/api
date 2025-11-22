@@ -209,6 +209,7 @@ const convertToCSV = (data) => {
     return csvRows.join('\n');
 };
 
+
 document.addEventListener('DOMContentLoaded', () => {
     // DOM element references
     const fetchButton = document.getElementById('fetchButton');
@@ -217,6 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const toDateInput = document.getElementById('toDate');
     const summaryTable = document.getElementById('summaryTable');
     const dataContainer = document.getElementById('dataContainer');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressMsg = document.getElementById('progressMsg');
+    const progressBar = document.getElementById('progressBar');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const buttonText = document.getElementById('buttonText');
     const messageBox = document.getElementById('messageBox');
@@ -250,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropdown = new Dropdown($exportDropdownEl, $exportButton);
 
     fetchButton.addEventListener('click', async () => {
-        const user = userSelect.selectedOptions[0].label
+
         const ris = userSelect.value;
         const fromDate = fromDateInput.value;
         const toDate = toDateInput.value;
@@ -260,56 +264,85 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        fetchButton.disabled = true;
         buttonText.textContent = 'Fetching...';
         loadingIndicator.classList.remove('invisible');
-        fetchButton.disabled = true;
+
+        progressMsg.textContent = '';
+        progressBar.style.width = '0px';
+        progressContainer.classList.remove('hidden');
+
         dataContainer.classList.add('hidden');
-
+        
+        const webSocketEndpoint = '/registrar_numbers'
+        let websocket;
         try {
-            const response = await fetch('/registrar_numbers', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ris, fromDate, toDate })
-            });
-            const data = await response.json();
-            
-            if (data === null) {
-                showMessage("No reports found for the given user and date range.");
-                return;
-            }
-            const reportData = data['report_data']
-            dataTable.data.data = [];
-            dataTable.insert({data: reportData});
-            summaryTable.innerHTML = createPivotTable(data['modality_pivot']);
-
-            const chart = new ApexCharts(document.getElementById('chart'), chartConfig);
-            chart.render();
-            chart.updateOptions({
-                colors: data.chart_data.map(s => chartColours[s.name]),
-                series: data.chart_data,
-            });
-
-            dataContainer.classList.remove('hidden');
-
-            const csvString = convertToCSV(reportData);
-            const csvBlob = new Blob([csvString], { type: 'text/csv' });
-            const downloadCsvLink = document.getElementById('downloadCsvLink');
-            downloadCsvLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.csv`
-            downloadCsvLink.href = URL.createObjectURL(csvBlob);
-
-            const jsonString = JSON.stringify(reportData, null, 2);
-            const jsonBlob = new Blob([jsonString], { type: 'application/json' });
-            const downloadJsonLink = document.getElementById('downloadJsonLink');
-            downloadJsonLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.json`
-            downloadJsonLink.href = URL.createObjectURL(jsonBlob);
-
-        } catch (error) {
-            console.error('Error fetching reports:', error);
-            showMessage('Failed to fetch reports.');
-        } finally {
-            buttonText.textContent = 'Fetch Reports';
-            loadingIndicator.classList.add('invisible');
-            fetchButton.disabled = false;
+            websocket = new WebSocket(webSocketEndpoint);
+        } catch {
+            const webSocketScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const webSocketURL = webSocketScheme + "//" + window.location.host + webSocketEndpoint;
+            websocket = new WebSocket(webSocketURL);
         }
+        websocket.addEventListener("open", () => {
+            console.log('websocket opened');
+            websocket.send(JSON.stringify({ ris, fromDate, toDate }));
+        });
+        websocket.addEventListener("close", () => {
+            console.log('websocket closed');
+            loadingIndicator.classList.add('invisible');
+            buttonText.textContent = 'Fetch Reports';
+            fetchButton.disabled = false;
+        });
+        websocket.addEventListener("message", (e) => {
+            const message = JSON.parse(e.data);
+            switch (message.type) {
+                case "update":
+                    console.log(`websocket update (${message.percent}%): ${message.msg}`);
+                    progressMsg.textContent = message.msg;
+                    progressBar.style.width = `${message.percent}%`;
+                    break;
+                case "error":
+                    console.error(`websocket error: ${message.msg}`);
+                    progressContainer.classList.add('hidden');
+                    showMessage(message.msg);
+                    break;
+                case "result":
+                    console.log('websocket got result');
+                    progressMsg.textContent = 'Completed';
+                    progressBar.style.width = '100%';
+                    const data = message.result;
+                    if (data === null) {
+                        showMessage("No reports found for the given user and date range.");
+                    } else {
+                        const reportData = data['report_data']
+                        dataTable.data.data = [];
+                        dataTable.insert({data: reportData});
+                        summaryTable.innerHTML = createPivotTable(data['modality_pivot']);
+
+                        const chart = new ApexCharts(document.getElementById('chart'), chartConfig);
+                        chart.render();
+                        chart.updateOptions({
+                            colors: data.chart_data.map(s => chartColours[s.name]),
+                            series: data.chart_data,
+                        });
+
+                        const csvString = convertToCSV(reportData);
+                        const csvBlob = new Blob([csvString], { type: 'text/csv' });
+                        const downloadCsvLink = document.getElementById('downloadCsvLink');
+                        downloadCsvLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.csv`
+                        downloadCsvLink.href = URL.createObjectURL(csvBlob);
+
+                        const jsonString = JSON.stringify(reportData, null, 2);
+                        const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+                        const downloadJsonLink = document.getElementById('downloadJsonLink');
+                        downloadJsonLink.download = `${ris}_${fromDateInput.value}_${toDateInput.value}.json`
+                        downloadJsonLink.href = URL.createObjectURL(jsonBlob);
+                        dataContainer.classList.remove('hidden');
+                    }
+                    progressContainer.classList.add('hidden');
+                    break;
+                }
+        });
+
     });
 });
