@@ -80,7 +80,7 @@
                                 {% endif %}
                             </div></td>
                             <td>{{ user.specialty }}</td>
-                            <td{% if user.computer is not none %} title={{ user.computer }}{% endif %}>{% if user.desk is none %}Offsite{% else %}{{ user.desk }}{% endif %}</td>
+                            <td{% if user.computer_name is not none %} title={{ user.computer_name }}{% elif user.ps360_last_event_workstation_offsite is not none %} title={{ user.ps360_last_event_workstation_offsite }}{% endif %}>{% if user.desk is none %}Offsite{% else %}{{ user.desk }}{% endif %}</td>
                             <td>{% if user.phone is not none %}{{ user.phone }}{% endif %}</td>
                             <td>
                                 <div class="dropdown is-hoverable is-unselectable">
@@ -103,9 +103,9 @@
                                                     {% endif %}
                                                 </span>
                                             </div>
-                                            {% if user.ps360_last_event_timestamp is not none and user.ps360_last_event_type is not none %}
+                                            {% if user.ps360_last_event is not none and user.ps360_last_event_type is not none %}
                                             <div class="dropdown-item">
-                                                <span><span title="{{ user.ps360_last_event_type }}">Dictation: </span><relative-time datetime="{{ user.ps360_last_event_timestamp | format_iso8601 }}"/></span>
+                                                <span><span title="{{ user.ps360_last_event_type }}">Dictation: </span><relative-time datetime="{{ user.ps360_last_event | format_iso8601 }}"/></span>
                                             </div>
                                             {% endif %}
                                             {% if user.last_report is not none %}

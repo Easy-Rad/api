@@ -6,36 +6,56 @@ from quart import render_template
 from datetime import datetime
 
 users_query: LiteralString = r"""
-with
-    filtered_users as (select *, extract(epoch from ps360_last_event_timestamp)::int as ps360_last_event_posix from users where show_in_locator and pacs_presence <> 'Offline'),
-    windows_logons as (select ris, key as windows_computer, value::int as windows_logon, row_number() over (partition by ris order by value::int desc) ranked_order from filtered_users, jsonb_each(windows_logons)),
-    combined_data as (select
-        filtered_users.ris,
-        first_name,
-        last_name,
-        physch,
-        specialty,
-        radiologist,
-        case
-            when ps360_last_event_workstation is null then windows_computer
-            when windows_computer is null then ps360_last_event_workstation
-            when windows_logon > ps360_last_event_posix then windows_computer
-            else ps360_last_event_workstation
-            end as computer,
-        windows_computer,
-        windows_logon,
-        pacs_presence,
-        extract(epoch from pacs_last_updated)::int as pacs_last_updated,
-        ps360_last_event_posix as ps360_last_event_timestamp,
-        ps360_last_event_type
-    from filtered_users
-    left join windows_logons on windows_logons.ris = filtered_users.ris and ranked_order = 1)
+with filtered_users as (select ris,
+                               first_name,
+                               last_name,
+                               physch,
+                               specialty,
+                               radiologist,
+                               ps360_last_event_workstation,
+                               ps360_last_event_type,
+                               extract(epoch from ps360_last_event_timestamp)::int as ps360_last_event,
+                               pacs_presence,
+                               extract(epoch from pacs_last_updated)::int as pacs_last_updated,
+                               windows_logons
+                        from users
+                        where show_in_locator
+                          and pacs_presence <> 'Offline'),
+     windows_logons as (select ris,
+                               key                      as windows_computer,
+                               value::int as windows_logon
+                        from filtered_users, jsonb_each(windows_logons))
 select
-    combined_data.*,
-    desks.name as desk,
-    phone
-from combined_data
-left join desks on desks.computer_name = combined_data.computer
+       filtered_users.ris,
+       first_name,
+       last_name,
+       physch,
+       specialty,
+       radiologist,
+       windows_computer,
+       windows_logon,
+       pacs_presence,
+       pacs_last_updated,
+       case
+           when ps360_last_event_workstation is not null
+               and windows_computer is distinct from ps360_last_event_workstation
+               and not exists (select 1
+                               from desks
+                               where computer_name = ps360_last_event_workstation)
+               then ps360_last_event_workstation end as ps360_last_event_workstation_offsite,
+       ps360_last_event,
+       ps360_last_event_type,
+       desks.name as desk,
+       phone,
+       computer_name
+from filtered_users
+         left join windows_logons on windows_logons.ris = filtered_users.ris
+         left join desks on case
+                                when (ps360_last_event_workstation is null)
+                                    or (windows_logon >= ps360_last_event)
+                                    or (windows_computer = ps360_last_event_workstation)
+                                    then windows_computer
+                                end = desks.computer_name
 order by last_name, first_name
 """
 
@@ -122,7 +142,7 @@ async def wally_data():
             user["last_report"],
             user["last_triage"],
             user["pacs_last_updated"],
-            user["ps360_last_event_timestamp"],
+            user["ps360_last_event"],
             user["windows_logon"],
         ) if timestamp is not None]
         user["last_active"] = max(timestamps) if len(timestamps) > 0 else None
