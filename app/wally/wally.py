@@ -25,7 +25,7 @@ with filtered_users as (select ris,
                                key                      as windows_computer,
                                value::int as windows_logon
                         from filtered_users, jsonb_each(windows_logons))
-select
+select distinct on (filtered_users.ris)
        filtered_users.ris,
        first_name,
        last_name,
@@ -56,7 +56,7 @@ from filtered_users
                                     or (windows_computer = ps360_last_event_workstation)
                                     then windows_computer
                                 end = desks.computer_name
-order by last_name, first_name
+order by filtered_users.ris, last_name, first_name, desks.name is not null desc, windows_logon desc
 """
 
 ris_query: LiteralString = r"""
