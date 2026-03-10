@@ -7,29 +7,33 @@ from os import environ
 import httpx
 from dataclasses import dataclass
 from datetime import datetime, date, time
-from lxml import html, etree # pyright: ignore[reportAttributeAccessIssue]
+from lxml import html, etree  # pyright: ignore[reportAttributeAccessIssue]
 from psycopg.types.json import Jsonb
 import logging
 import pandas as pd
 from .parts_parser import clean, parse_cleaned
 
-IB_HOST = environ.get('IB_HOST','app-inteleradha-p.healthhub.health.nz')
+IB_HOST = environ.get('IB_HOST', 'app-inteleradha-p.healthhub.health.nz')
 IB_USER = environ['IB_USER']
 IB_PASSWORD = environ['IB_PASSWORD']
 
 RETRIEVE_STEPS = 5
 
+
 async def websocket_send_error(msg: str):
     if has_websocket_context():
         await websocket.send_json(type='error', msg=msg)
+
 
 async def websocket_send_update(msg: str, progress: float):
     if has_websocket_context():
         await websocket.send_json(type='update', msg=msg, percent=round(progress*100))
 
+
 async def websocket_send_result(result: dict | None):
     if has_websocket_context():
         await websocket.send_json(type='result', result=result)
+
 
 @app.websocket('/registrar_numbers')
 async def ws():
@@ -54,15 +58,20 @@ async def ws():
     if data is None:
         await websocket_send_result(data)
         return
-    report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
-    modality_pivot = data.pivot_table(index='modality',values='sum_of_parts', aggfunc=['count', 'sum'], margins=False).to_dict('split')
-    time_series = data[data['modality'].isin(('CT','MR','NM','XR'))].groupby('modality').resample(pd.tseries.offsets.Week(weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
-    chart_data = [dict(name=modality, data=list(series.items())) for modality, series in time_series.items()]
+    report_data = data.assign(report_timestamp=data['report_timestamp'].astype(
+        int) // 10**9, case_timestamp=data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
+    modality_pivot = data.pivot_table(index='modality', values='sum_of_parts', aggfunc=[
+                                      'count', 'sum'], margins=False).to_dict('split')
+    time_series = data[data['modality'].isin(('CT', 'MR', 'NM', 'XR'))].groupby('modality').resample(pd.tseries.offsets.Week(
+        weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
+    chart_data = [dict(name=modality, data=list(series.items()))
+                  for modality, series in time_series.items()]
     await websocket_send_result(dict(
-		report_data=report_data,
-		modality_pivot=modality_pivot,
-		chart_data=chart_data,
-	))
+        report_data=report_data,
+        modality_pivot=modality_pivot,
+        chart_data=chart_data,
+    ))
+
 
 @app.get('/registrar_numbers')
 async def get_registrar_numbers():
@@ -77,7 +86,7 @@ async def get_registrar_numbers():
             and registrar_start_date is not null
             order by last_name
         """) as cur:
-            return await render_template('registrar-numbers.jinja', users = await cur.fetchall())
+            return await render_template('registrar-numbers.jinja', users=await cur.fetchall())
 
 # @app.post('/registrar_numbers')
 # async def fetch_registrar_numbers():
@@ -97,7 +106,7 @@ async def get_registrar_numbers():
 #             date.fromisoformat(r["toDate"]),
 #         )
 #         logging.info(f'Generating registrar numbers for {user.pacs} ({user.ris}) from {user.fromDate} to {user.toDate}')
-#         async with InteleBrowserClient(timeout=None) as client:        
+#         async with InteleBrowserClient(timeout=None) as client:
 #             data = await client.process_user(user, conn)
 #     if data is None: return jsonify(None)
 #     report_data=data.assign(report_timestamp = data['report_timestamp'].astype(int) // 10**9, case_timestamp = data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
@@ -110,11 +119,13 @@ async def get_registrar_numbers():
 # 		chart_data=chart_data,
 # 	)
 
+
 @dataclass
 class Report:
     accession: str
     timestamp: datetime
     overread: bool
+
 
 @dataclass
 class User:
@@ -123,6 +134,7 @@ class User:
     ps360: int | None
     fromDate: date
     toDate: date
+
 
 DB_QUERY = r"""
 with events as (
@@ -169,6 +181,8 @@ from accessions
          join patient on cs_pno = pa_pno
 order by report_timestamp
 """
+
+
 class InteleBrowserClient(httpx.AsyncClient):
     LOGIN_URL = f"http://{IB_HOST}/InteleBrowser/login/ws/auth"
     LOGOUT_URL = f"http://{IB_HOST}/InteleBrowser/login/ws/auth/revoke"
@@ -184,7 +198,7 @@ class InteleBrowserClient(httpx.AsyncClient):
                 "mfaToken": "",
                 "keepMeLoggedIn": "false",
             },
-        )).raise_for_status() # log in
+        )).raise_for_status()  # log in
         (await self.post(
             self.APP_URL,
             data={
@@ -194,14 +208,14 @@ class InteleBrowserClient(httpx.AsyncClient):
                 "pageSizeSelect": "4",
                 "pageSizeSelect$0": "4",
             },
-        )).raise_for_status() # set page size to 1000
+        )).raise_for_status()  # set page size to 1000
         return self
 
     async def __aexit__(
         self,
-        exc_type = None,
-        exc_value = None,
-        traceback = None,
+        exc_type=None,
+        exc_value=None,
+        traceback=None,
     ):
         (await self.get(
             self.LOGOUT_URL,
@@ -215,7 +229,8 @@ class InteleBrowserClient(httpx.AsyncClient):
         return await self.fetch_ris_data(user, impressions, conn)
 
     async def fetch_impressions(self, user: User, conn: AsyncConnection, ps360: PS360) -> list[Report]:
-        _from, _to = datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(user.toDate, time.max, tzinfo=TZ)
+        _from, _to = datetime.combine(user.fromDate, time.min, tzinfo=TZ), datetime.combine(
+            user.toDate, time.max, tzinfo=TZ)
         today = datetime.now(tz=TZ).date()
         async with conn.cursor() as cur:
             if user.ps360 is not None:
@@ -227,8 +242,10 @@ class InteleBrowserClient(httpx.AsyncClient):
                     limit 1
                     """, [user.pacs], prepare=True)
                 scrape_from_datetime = datetime.combine(row[0].astimezone(tz=TZ).date() if (row := await cur.fetchone()) is not None else today.replace(year=today.year - 2), time.min, tzinfo=TZ)
-                scrape_to_datetime = datetime.combine(today, time.max, tzinfo=TZ)
-                logging.info(f"Retrieving PS360 overread reports for {user.pacs} from {scrape_from_datetime} to {scrape_to_datetime}")
+                scrape_to_datetime = datetime.combine(
+                    today, time.max, tzinfo=TZ)
+                logging.info(
+                    f"Retrieving PS360 overread reports for {user.pacs} from {scrape_from_datetime} to {scrape_to_datetime}")
                 async for reportId, accession in ps360.orders(user.ps360, scrape_from_datetime, scrape_to_datetime):
                     if (overread := await ps360.get_overread(reportId)) is not None:
                         await cur.execute(r"""
@@ -246,7 +263,8 @@ class InteleBrowserClient(httpx.AsyncClient):
                             or registrar_numbers.overread > excluded.overread
                             """, [user.pacs, accession, overread], prepare=True)
                         if cur.rowcount > 0:
-                            logging.debug(f'{user.pacs} overread {accession} at {overread}')
+                            logging.debug(
+                                f'{user.pacs} overread {accession} at {overread}')
             await cur.execute(r"""
                 select impression from registrar_numbers
                 where user_pacs = %s and impression is not null
@@ -255,17 +273,19 @@ class InteleBrowserClient(httpx.AsyncClient):
                 """, [user.pacs], prepare=True)
             if (row := await cur.fetchone()) is not None:
                 last_database_timestamp: datetime = row[0]
-                scrape_from_date = last_database_timestamp.astimezone(tz=TZ).date()
+                scrape_from_date = last_database_timestamp.astimezone(
+                    tz=TZ).date()
             else:
                 scrape_from_date = today.replace(year=today.year - 10)
-            logging.info(f"Retrieving impressions data for {user.pacs} from {scrape_from_date} to {today}")
+            logging.info(
+                f"Retrieving impressions data for {user.pacs} from {scrape_from_date} to {today}")
             await websocket_send_update(f"Retrieving impressions...", 2/RETRIEVE_STEPS)
             response = await self.post(
                 self.APP_URL,
                 data={
                     "service": "direct/1/AuditDetails/$Form",
-                    "sp": "S0",
-                    "Form0": "usernameFilter,$PropertySelection,patientIdFilter,studyDescriptionFilter,$PropertySelection$0,$Checkbox,$Checkbox$0,$Checkbox$1,$Checkbox$2,$Checkbox$3,$Checkbox$4,$Checkbox$5,$Checkbox$6,$Checkbox$7,$Checkbox$8,$Checkbox$9,$Checkbox$10,$Checkbox$11,$Checkbox$12,$Checkbox$13,$Checkbox$14,$Checkbox$15,$Checkbox$16,$Checkbox$17,$Checkbox$18,$Checkbox$19,$Checkbox$20,$Checkbox$21,$Checkbox$22,$Checkbox$23,$Checkbox$24,$Checkbox$25,$Checkbox$26,$Checkbox$27,$Checkbox$28,$Checkbox$29,$Checkbox$30,$Checkbox$31,$Checkbox$32,$Checkbox$33,$Checkbox$34,$Checkbox$35,$Checkbox$36,$Checkbox$37,$Checkbox$38,$Checkbox$39,$Checkbox$40,$Checkbox$41,$Checkbox$42,$Submit",
+                    "sp": "S1",
+                    "Form1": "usernameFilter,$PropertySelection,patientIdFilter,studyDescriptionFilter,$PropertySelection$0,$Checkbox,$Checkbox$0,$Checkbox$1,$Checkbox$2,$Checkbox$3,$Checkbox$4,$Checkbox$5,$Checkbox$6,$Checkbox$7,$Checkbox$8,$Checkbox$9,$Checkbox$10,$Checkbox$11,$Checkbox$12,$Checkbox$13,$Checkbox$14,$Checkbox$15,$Checkbox$16,$Checkbox$17,$Checkbox$18,$Checkbox$19,$Checkbox$20,$Checkbox$21,$Checkbox$22,$Checkbox$23,$Checkbox$24,$Checkbox$25,$Checkbox$26,$Checkbox$27,$Checkbox$28,$Checkbox$29,$Checkbox$30,$Checkbox$31,$Checkbox$32,$Checkbox$33,$Checkbox$34,$Checkbox$35,$Checkbox$36,$Checkbox$37,$Checkbox$38,$Checkbox$39,$Checkbox$40,$Checkbox$41,$Checkbox$42,$Checkbox$43,$Checkbox$44,$Checkbox$45,$Checkbox$46,$Checkbox$47,$Checkbox$48,$Checkbox$49,$Checkbox$50,$Checkbox$51,$Submit",
                     "usernameFilter": user.pacs,
                     "$PropertySelection": "anyRole",
                     "patientIdFilter": "",
@@ -282,23 +302,27 @@ class InteleBrowserClient(httpx.AsyncClient):
                 root = html.fromstring(response.text)
                 for a in root.xpath("//a[@studyuid!=''][@actiontype][@date]"):
                     uid = a.attrib['studyuid']
-                    timestamp = datetime.fromisoformat(a.attrib['date']).replace(tzinfo=TZ)
+                    timestamp = datetime.fromisoformat(
+                        a.attrib['date']).replace(tzinfo=TZ)
                     await cur.execute(r"""
                         select accession from registrar_numbers_accessions
                         where pacs_audit_uid = %s
                         """, [uid], prepare=True)
                     if (row := await cur.fetchone()) is not None:
                         accession, = row
-                        logging.debug(f"Fetched accession from database: {accession}")
+                        logging.debug(
+                            f"Fetched accession from database: {accession}")
                     else:
                         extra_response = await self.get(
                             self.APP_URL,
-                            params={"service": "xtile/null/AuditDetails/$XTile$2", "sp": uid},
+                            params={
+                                "service": "xtile/null/AuditDetails/$XTile$2", "sp": uid},
                         )
                         extra_root = etree.fromstring(extra_response.content)
                         if (accession_node := extra_root.find("./sp[2]")) is not None:
                             accession = accession_node.text
-                            logging.debug(f"Fetched accession from internet: {accession}")
+                            logging.debug(
+                                f"Fetched accession from internet: {accession}")
                             await cur.execute(r"""
                                 insert into registrar_numbers_accessions (accession, pacs_audit_uid)
                                 values (%s, %s)
@@ -308,7 +332,8 @@ class InteleBrowserClient(httpx.AsyncClient):
                                 """, [accession, uid], prepare=True)
                             scraped_count += 1
                         else:
-                            logging.error(f'Error fetching accession for uid: {uid}')
+                            logging.error(
+                                f'Error fetching accession for uid: {uid}')
                             continue
                     await cur.execute(r"""
                         insert into registrar_numbers (user_pacs, accession, impression)
@@ -322,12 +347,15 @@ class InteleBrowserClient(httpx.AsyncClient):
                         logging.debug(f"Updated database for {accession}")
                         update_count += cur.rowcount
                 if root.find(".//a[@name='nextPage']") is None:
-                    logging.info(f"Scraped {page_count + 1} InteleBrowser audit pages and got {scraped_count} accessions ({update_count} database updates)")
+                    logging.info(
+                        f"Scraped {page_count + 1} InteleBrowser audit pages and got {scraped_count} accessions ({update_count} database updates)")
                     break
-                logging.info(f"Processed page {page_count + 1}, fetching next page (total {scraped_count} accessions, {update_count} database updates)")
+                logging.info(
+                    f"Processed page {page_count + 1}, fetching next page (total {scraped_count} accessions, {update_count} database updates)")
                 response = await self.post(
                     f"http://{IB_HOST}/InteleBrowser/app",
-                    params={'service':'direct/1/AuditDetails/auditDetailsTable.customPaginationControlTop.nextPage'},
+                    params={
+                        'service': 'direct/1/AuditDetails/auditDetailsTable.customPaginationControlTop.nextPage'},
                 )
                 page_count += 1
             await cur.execute(r"""
@@ -343,24 +371,29 @@ class InteleBrowserClient(httpx.AsyncClient):
             return [Report(accession, timestamp, overread) for accession, timestamp, overread in await cur.fetchall()]
 
     async def fetch_ris_data(self, user: User, reports: list[Report], conn: AsyncConnection) -> pd.DataFrame | None:
-        logging.info(f"Retrieving RIS orders for {user.ris} from {user.fromDate} to {user.toDate}")
+        logging.info(
+            f"Retrieving RIS orders for {user.ris} from {user.fromDate} to {user.toDate}")
         await websocket_send_update(f"Retrieving reports from RIS...", 3/RETRIEVE_STEPS)
         async with comrad_pool.connection() as comrad_conn:
             async with await comrad_conn.execute(DB_QUERY, [
                 user.ris,
                 user.fromDate,
                 user.toDate,
-                Jsonb([(report.accession, report.timestamp.timestamp(), report.overread) for report in reports]),
+                Jsonb([(report.accession, report.timestamp.timestamp(),
+                      report.overread) for report in reports]),
             ]) as cur:
-                column_names = [desc.name for desc in cur.description] # pyright: ignore[reportOptionalIterable]
+                # pyright: ignore[reportOptionalIterable]
+                column_names = [desc.name for desc in cur.description]
                 df = pd.DataFrame(await cur.fetchall(), columns=column_names)
         if df.empty:
             logging.info(f"No orders retrieved from RIS database")
             return None
-        logging.info(f"Retrieved {len(df)} reports from RIS, calculating sum of parts")
+        logging.info(
+            f"Retrieved {len(df)} reports from RIS, calculating sum of parts")
         await websocket_send_update(f"Retrieved {len(df)} reports, calculating sum of parts...", 4/RETRIEVE_STEPS)
         xr_modality_condition = df['modality'] == 'XR'
-        df.loc[xr_modality_condition, 'description'] = df.loc[xr_modality_condition, 'description'].apply(clean)
+        df.loc[xr_modality_condition,
+               'description'] = df.loc[xr_modality_condition, 'description'].apply(clean)
         xr_descriptions = df[xr_modality_condition]['description'].unique()
         xr_exam_parts: dict[str, int] = {}
         if len(xr_descriptions):
@@ -384,7 +417,9 @@ class InteleBrowserClient(httpx.AsyncClient):
                         on conflict (description) do update
                         set exam_parts = excluded.exam_parts
                         """, ((description, xr_exam_parts[description]) for description in newly_parsed))
-                    logging.info(f"Updated exam_parts database with {cur.rowcount} newly parsed exam descriptions")
-        df['sum_of_parts'] = df.apply(lambda row: max(xr_exam_parts[row['description']] if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1, result_type='reduce')
+                    logging.info(
+                        f"Updated exam_parts database with {cur.rowcount} newly parsed exam descriptions")
+        df['sum_of_parts'] = df.apply(lambda row: max(xr_exam_parts[row['description']]
+                                      if row['modality'] == 'XR' else 1, len(row['exams'])), axis=1, result_type='reduce')
         logging.info(f"Parsing complete")
         return df
