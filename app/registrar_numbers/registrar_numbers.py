@@ -58,8 +58,10 @@ async def ws():
     if data is None:
         await websocket_send_result(data)
         return
-    report_data = data.assign(report_timestamp=data['report_timestamp'].astype(
-        int) // 10**9, case_timestamp=data['case_timestamp'].astype(int) // 10**9).to_dict('split', index=False)['data']
+    report_data = data.assign(report_timestamp=data['report_timestamp']  # .astype('int64') // 10**9
+                              # .astype('int64') // 10**9
+                              , case_timestamp=data['case_timestamp']
+                              ).to_dict('split', index=False)['data']
     modality_pivot = data.pivot_table(index='modality', values='sum_of_parts', aggfunc=[
                                       'count', 'sum'], margins=False).to_dict('split')
     time_series = data[data['modality'].isin(('CT', 'MR', 'NM', 'XR'))].groupby('modality').resample(pd.tseries.offsets.Week(
