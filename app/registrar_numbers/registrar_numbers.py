@@ -64,10 +64,14 @@ async def ws():
                               ).to_dict('split', index=False)['data']
     modality_pivot = data.pivot_table(index='modality', values='sum_of_parts', aggfunc=[
                                       'count', 'sum'], margins=False).to_dict('split')
-    time_series = data[data['modality'].isin(('CT', 'MR', 'NM', 'XR'))].groupby('modality').resample(pd.tseries.offsets.Week(
-        weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
-    chart_data = [dict(name=modality, data=list(series.items()))
-                  for modality, series in time_series.items()]
+    data = data[data['modality'].isin(('CT', 'MR', 'NM', 'XR'))]
+    if len(data) > 0:
+        time_series = data.groupby('modality').resample(pd.tseries.offsets.Week(
+            weekday=0), on='report_timestamp', origin='end_day', include_groups=False)[['sum_of_parts']].sum()['sum_of_parts'].unstack(level='modality', fill_value=0).cumsum()
+        chart_data = [dict(name=modality, data=list(series.items()))
+                      for modality, series in time_series.items()]
+    else:
+        chart_data = []
     await websocket_send_result(dict(
         report_data=report_data,
         modality_pivot=modality_pivot,
