@@ -65,6 +65,47 @@ on conflict (tokenised, modality, username) do update
 set code = excluded.code
 """
 
+autotriage_config_query: LiteralString = r"""
+with exams_by_modality as (
+  select
+    modality,
+    jsonb_object_agg(
+      code,
+      jsonb_build_array(body_part, name)
+    ) as examinations_by_code
+  from examination
+  group by modality
+),
+exams as (
+  select
+    jsonb_object_agg(
+      modality,
+      examinations_by_code
+    ) as exams
+  from exams_by_modality
+),
+labels_by_modality as (
+  select
+    modality,
+    jsonb_object_agg(
+      tokenised,
+      code
+    ) as labels_by_tokenised
+  from label
+  group by modality
+),
+labels as (
+  select
+    jsonb_object_agg(
+      modality,
+      labels_by_tokenised
+    ) as labels
+  from labels_by_modality
+)
+select * from exams cross join labels
+"""
+
+
 @app.post('/autotriage')
 async def post_autotriage():
     try:
@@ -89,7 +130,8 @@ async def post_autotriage():
         normalised_exam = result['normalised_exam']
         patient_age = result['patient_age']
         egfr = result['egfr']
-        tokenised = tokenise_request(requested_exam) if requested_exam is not None else tokenise_request(normalised_exam)
+        tokenised = tokenise_request(
+            requested_exam) if requested_exam is not None else tokenise_request(normalised_exam)
         async with local_pool.connection() as conn:
             async with await conn.execute(autotriage_query, [user_code, tokenised, modality], prepare=True) as cur:
                 result = await cur.fetchone()
@@ -99,7 +141,7 @@ async def post_autotriage():
             if result is not None:
                 code, exam, body_part, custom = result
                 if code in ('Q25', 'Q25C') and (patient_age >= 80 or egfr is not None and egfr < 30):
-                    code = 'Q25TC' if code == 'Q25C' else 'Q25T' # Barium-tagged CT colonography
+                    code = 'Q25TC' if code == 'Q25C' else 'Q25T'  # Barium-tagged CT colonography
                 result = dict(
                     body_part=body_part,
                     code=code,
@@ -129,6 +171,7 @@ async def post_autotriage():
     except ApiError as e:
         return dict(error=e.message), 400
 
+
 @app.post('/autotriage/remember')
 async def autotriage_remember():
     try:
@@ -149,6 +192,7 @@ async def autotriage_remember():
     except ApiError as e:
         return dict(error=e.message), 400
 
+
 def tokenise_request(s: str) -> str:
     s = re.sub(
         # remove non-alphanumeric characters except for C- and C+
@@ -156,6 +200,19 @@ def tokenise_request(s: str) -> str:
         pattern=r'[^\w+-]|(?<!\bC)[+-]|\b(and|or|with|by|left|right|please|GP|CT|MRI?|US|ultrasound|scan|study|protocol|contrast)\b',
         repl=' ',
         string=s,
-        flags=re.IGNORECASE|re.ASCII,
+        flags=re.IGNORECASE | re.ASCII,
     )
-    return ' '.join(sorted(re.split(r'\s+', s.lower().strip()))) # remove extra whitespace
+    # remove extra whitespace
+    return ' '.join(sorted(re.split(r'\s+', s.lower().strip())))
+
+
+@app.get('/autotriage/config')
+async def autotriage_config():
+    async with local_pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(autotriage_config_query, prepare=True)
+            result = await cur.fetchone()
+            if result is not None:
+                return result
+            else:
+                raise ApiError("No config found")
