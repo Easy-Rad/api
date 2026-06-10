@@ -21,6 +21,6 @@ USER app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=30s --start-period=10s --timeout=2s \
-    CMD curl -f http://localhost:5000/api/health || exit 1
+    CMD curl -f http://localhost:5000${ROOT_PATH}/health || exit 1
 EXPOSE 5000
 CMD hypercorn --bind 0.0.0.0:5000 --root-path=$ROOT_PATH app.app:app
