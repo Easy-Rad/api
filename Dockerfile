@@ -23,4 +23,4 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 HEALTHCHECK --interval=30s --start-period=10s --timeout=2s \
     CMD curl -f http://localhost:5000/health || exit 1
 EXPOSE 5000
-CMD ["hypercorn", "--bind", "0.0.0.0:5000", "app.app:app"]
+CMD hypercorn --bind 0.0.0.0:5000 --root-path=$ROOT_PATH app.app:app
